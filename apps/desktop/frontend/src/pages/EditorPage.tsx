@@ -8,8 +8,10 @@ import {
 } from 'lucide-react'
 import { clipApi } from '../services/api'
 import {
-  FFmpegIsAvailable, OpenFileDialog, ProbeVideo, TrimVideo, ServeLocalFile, CleanupServe, UploadFile
+  FFmpegIsAvailable, InstallFFmpeg, GetMediaServerURL,
+  OpenFileDialog, ProbeVideo, TrimVideo, ServeLocalFile, CleanupServe, UploadFile
 } from '../../wailsjs/go/main/App'
+import { EventsOn, EventsOff } from '../../wailsjs/runtime/runtime'
 
 type EditorStep = 'select' | 'editing' | 'processing' | 'uploading'
 
@@ -228,12 +230,41 @@ function EditorPage() {
   const [videoWidth, setVideoWidth] = useState(0)
   const [videoHeight, setVideoHeight] = useState(0)
 
+  const [mediaServerURL, setMediaServerURL] = useState('')
   const [ffmpegAvailable, setFfmpegAvailable] = useState(false)
+  const [ffmpegInstalling, setFfmpegInstalling] = useState(false)
+  const [ffmpegInstallStage, setFfmpegInstallStage] = useState('')
+  const [ffmpegInstallPct, setFfmpegInstallPct] = useState(0)
+  const [ffmpegInstallError, setFfmpegInstallError] = useState('')
   const [processing, setProcessing] = useState(false)
   const [processingProgress, setProcessingProgress] = useState('')
 
   useEffect(() => {
+    GetMediaServerURL().then(setMediaServerURL)
     FFmpegIsAvailable().then(setFfmpegAvailable).catch(() => setFfmpegAvailable(false))
+  }, [])
+
+  const handleInstallFFmpeg = useCallback(async () => {
+    setFfmpegInstalling(true)
+    setFfmpegInstallError('')
+    setFfmpegInstallStage('Starting…')
+    setFfmpegInstallPct(0)
+
+    const handler = (data: { stage: string; pct: number }) => {
+      setFfmpegInstallStage(data.stage)
+      setFfmpegInstallPct(data.pct)
+    }
+    EventsOn('ffmpeg:install:progress', handler)
+
+    try {
+      await InstallFFmpeg()
+      setFfmpegAvailable(true)
+    } catch (err: any) {
+      setFfmpegInstallError(err?.message ?? String(err))
+    } finally {
+      EventsOff('ffmpeg:install:progress')
+      setFfmpegInstalling(false)
+    }
   }, [])
 
   const handleSelectFile = useCallback(async () => {
@@ -248,7 +279,7 @@ function EditorPage() {
 
       const serveName = await ServeLocalFile(filePath)
       setServedName(serveName)
-      setVideoMediaUrl(`/media/${serveName}`)
+      setVideoMediaUrl(`${mediaServerURL}/media/${serveName}`)
       setStep('editing')
 
       if (ffmpegAvailable) {
@@ -268,7 +299,7 @@ function EditorPage() {
     } catch (err: any) {
       setError(err.message || 'Failed to select file')
     }
-  }, [ffmpegAvailable])
+  }, [ffmpegAvailable, mediaServerURL])
 
   const handleDurationChange = (duration: number) => {
     setVideoDuration(duration)
@@ -416,11 +447,35 @@ function EditorPage() {
               <FolderOpen className="h-4 w-4" />
               <span>Browse Files</span>
             </button>
-            {!ffmpegAvailable && (
-              <p className="mt-3 text-xs text-earth-400">ffmpeg not found — trimming will be unavailable. Install ffmpeg for best performance.</p>
-            )}
-            {ffmpegAvailable && (
+            {ffmpegAvailable ? (
               <p className="mt-3 text-xs text-moss-400">Native ffmpeg detected — fast trimming enabled</p>
+            ) : (
+              <div className="mt-3 space-y-2">
+                {ffmpegInstalling ? (
+                  <div className="space-y-1">
+                    <p className="text-xs text-sand-400">{ffmpegInstallStage}</p>
+                    <div className="w-48 mx-auto h-1.5 bg-stone-700 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-forest-500 transition-all duration-300"
+                        style={{ width: `${ffmpegInstallPct}%` }}
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {ffmpegInstallError && (
+                      <p className="text-xs text-earth-400">{ffmpegInstallError}</p>
+                    )}
+                    <button
+                      className="btn-secondary text-xs px-3 py-1.5"
+                      onClick={handleInstallFFmpeg}
+                    >
+                      Install FFmpeg
+                    </button>
+                    <p className="text-xs text-sand-600">Required for video trimming</p>
+                  </>
+                )}
+              </div>
             )}
           </div>
         </div>
@@ -548,10 +603,29 @@ function EditorPage() {
                       </div>
                     </div>
                   </>
+                ) : ffmpegInstalling ? (
+                  <div className="space-y-2">
+                    <p className="text-sm text-sand-400">{ffmpegInstallStage}</p>
+                    <div className="h-1.5 bg-stone-700 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-forest-500 transition-all duration-300"
+                        style={{ width: `${ffmpegInstallPct}%` }}
+                      />
+                    </div>
+                    <p className="text-xs text-sand-600">{Math.round(ffmpegInstallPct)}%</p>
+                  </div>
                 ) : (
-                  <p className="text-sm text-earth-400">
-                    ffmpeg not found. Install ffmpeg on your system or bundle it with the app for fast video trimming. The full clip will be uploaded without trimming.
-                  </p>
+                  <div className="space-y-3">
+                    <p className="text-sm text-sand-400">
+                      FFmpeg is required for trimming. It will be downloaded once (~70 MB) and cached locally.
+                    </p>
+                    {ffmpegInstallError && (
+                      <p className="text-xs text-earth-400">{ffmpegInstallError}</p>
+                    )}
+                    <button className="btn-secondary w-full" onClick={handleInstallFFmpeg}>
+                      Install FFmpeg
+                    </button>
+                  </div>
                 )}
               </div>
             </div>

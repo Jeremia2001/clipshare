@@ -1,7 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Bash(go build *)"
+      "Bash(go build *)",
+      "Bash(go get:*)",
+      "Bash(curl -s \"https://api.github.com/repos/BtbN/FFmpeg-Builds/releases/latest\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); [print\\(a['name'], a['browser_download_url']\\) for a in d['assets'] if 'win64' in a['name'] and 'essentials' in a['name']]\")",
+      "Bash(wails generate:*)"
     ]
   }
 }

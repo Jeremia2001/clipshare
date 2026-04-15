@@ -6,6 +6,7 @@ import {
   MessageSquare, HardDrive, Loader2, Copy, Check, Film
 } from 'lucide-react'
 import { Clip, clipApi, shareApi, ShareResponse } from '../services/api'
+import { ProxyVideoURL } from '../../wailsjs/go/main/App'
 
 function ClipDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -31,9 +32,19 @@ function ClipDetailPage() {
   useEffect(() => {
     if (!id) return
     setLoading(true)
-    clipApi.get(id).then(({ data }) => {
+    clipApi.get(id).then(async ({ data }) => {
       setClip(data.clip)
-      setViewUrl(data.view_url || null)
+      if (data.view_url) {
+        const token = localStorage.getItem('access_token') || ''
+        try {
+          const proxyUrl = await ProxyVideoURL(data.view_url, token)
+          setViewUrl(proxyUrl)
+        } catch {
+          setViewUrl(data.view_url)
+        }
+      } else {
+        setViewUrl(null)
+      }
       setTitle(data.clip.title)
       setDescription(data.clip.description || '')
       setIsPublic(data.clip.is_public)

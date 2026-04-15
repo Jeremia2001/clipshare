@@ -9,51 +9,145 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 var (
-	binPath     string
-	binPathOnce sync.Once
-	binPathErr  error
+	binMu    sync.RWMutex
+	binCache string // non-empty once found
 )
 
+// encoderConfig holds a video encoder name and its quality/speed arguments.
+type encoderConfig struct {
+	name string
+	args []string
+}
+
+// hwEncoders are tried in order; first one that works is used.
+var hwEncoders = []encoderConfig{
+	// AMD AMF (RX series, Vega, etc.)
+	{"h264_amf", []string{"-quality", "speed", "-rc", "cqp", "-qp_i", "22", "-qp_p", "24", "-qp_b", "26"}},
+	// NVIDIA NVENC
+	{"h264_nvenc", []string{"-preset", "p1", "-tune", "ll", "-rc", "vbr", "-cq", "23"}},
+	// Intel Quick Sync
+	{"h264_qsv", []string{"-preset", "veryfast", "-global_quality", "25"}},
+}
+
+var swEncoder = encoderConfig{
+	"libx264", []string{"-preset", "ultrafast", "-crf", "23"},
+}
+
+var (
+	encMu      sync.Mutex
+	encCached  *encoderConfig
+)
+
+// selectEncoder detects the best available H.264 encoder once and caches it.
+func selectEncoder() encoderConfig {
+	encMu.Lock()
+	defer encMu.Unlock()
+	if encCached != nil {
+		return *encCached
+	}
+	bin, err := ffmpegBin()
+	if err != nil {
+		encCached = &swEncoder
+		return swEncoder
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	for _, enc := range hwEncoders {
+		cmd := exec.CommandContext(ctx, bin,
+			"-f", "lavfi", "-i", "nullsrc=s=64x64:d=0.04",
+			"-frames:v", "1",
+			"-c:v", enc.name,
+			"-f", "null", "-",
+		)
+		if cmd.Run() == nil {
+			e := enc
+			encCached = &e
+			return e
+		}
+	}
+	encCached = &swEncoder
+	return swEncoder
+}
+
+func invalidateBinCache() {
+	binMu.Lock()
+	binCache = ""
+	binMu.Unlock()
+}
+
+func ffmpegExe() string {
+	if runtime.GOOS == "windows" {
+		return "ffmpeg.exe"
+	}
+	return "ffmpeg"
+}
+
+func ffprobeExe() string {
+	if runtime.GOOS == "windows" {
+		return "ffprobe.exe"
+	}
+	return "ffprobe"
+}
+
 func findBin() (string, error) {
-	binPathOnce.Do(func() {
-		exe, _ := os.Executable()
-		binDir := filepath.Dir(exe)
+	binMu.RLock()
+	cached := binCache
+	binMu.RUnlock()
+	if cached != "" {
+		return cached, nil
+	}
 
-		for _, dir := range []string{binDir} {
-			ffmpeg := filepath.Join(dir, "ffmpeg")
-			ffprobe := filepath.Join(dir, "ffprobe")
-			if _, err := os.Stat(ffmpeg); err == nil {
-				if _, err := os.Stat(ffprobe); err == nil {
-					binPath = dir
-					return
-				}
-			}
-		}
+	binMu.Lock()
+	defer binMu.Unlock()
 
-		ffmpegPath, lookErr := exec.LookPath("ffmpeg")
-		if lookErr != nil {
-			binPathErr = fmt.Errorf("ffmpeg not found in PATH or alongside binary: %w", lookErr)
-			return
+	// Double-checked locking.
+	if binCache != "" {
+		return binCache, nil
+	}
+
+	setBin := func(dir string) string {
+		binCache = dir
+		return dir
+	}
+
+	// 1. App data install dir (populated by Install()).
+	if installDir, err := InstallDir(); err == nil {
+		if hasBinaries(installDir) {
+			return setBin(installDir), nil
 		}
-		ffprobePath, lookErr2 := exec.LookPath("ffprobe")
-		if lookErr2 != nil {
-			binPathErr = fmt.Errorf("ffprobe not found in PATH or alongside binary: %w", lookErr2)
-			return
+	}
+
+	// 2. Alongside the executable.
+	if exe, err := os.Executable(); err == nil {
+		dir := filepath.Dir(exe)
+		if hasBinaries(dir) {
+			return setBin(dir), nil
 		}
-		binPath = filepath.Dir(ffmpegPath)
-		if bp2 := filepath.Dir(ffprobePath); bp2 != binPath {
-			if _, statErr := os.Stat(filepath.Join(binPath, "ffprobe")); statErr != nil {
-				binPath = bp2
-			}
-		}
-	})
-	return binPath, binPathErr
+	}
+
+	// 3. System PATH.
+	ffmpegPath, err := exec.LookPath("ffmpeg")
+	if err != nil {
+		return "", fmt.Errorf("ffmpeg not found in PATH or app data dir")
+	}
+	if _, err := exec.LookPath("ffprobe"); err != nil {
+		return "", fmt.Errorf("ffprobe not found in PATH")
+	}
+	return setBin(filepath.Dir(ffmpegPath)), nil
+}
+
+func hasBinaries(dir string) bool {
+	_, errF := os.Stat(filepath.Join(dir, ffmpegExe()))
+	_, errP := os.Stat(filepath.Join(dir, ffprobeExe()))
+	return errF == nil && errP == nil
 }
 
 func ffmpegBin() (string, error) {
@@ -158,30 +252,34 @@ type TrimOptions struct {
 	Duration   float64 `json:"duration"`
 }
 
+func trimArgs(opts TrimOptions, enc encoderConfig, progress bool) []string {
+	// -ss BEFORE -i = fast input seek (jumps to nearest keyframe instantly).
+	// -ss AFTER -i  = slow output seek (decodes every frame from the start).
+	args := []string{
+		"-ss", fmt.Sprintf("%.3f", opts.StartTime),
+		"-i", opts.InputPath,
+		"-t", fmt.Sprintf("%.3f", opts.Duration),
+		"-c:v", enc.name,
+	}
+	args = append(args, enc.args...)
+	args = append(args, "-c:a", "aac", "-movflags", "+faststart")
+	if progress {
+		args = append(args, "-progress", "pipe:1")
+	}
+	args = append(args, "-y", opts.OutputPath)
+	return args
+}
+
 func Trim(ctx context.Context, opts TrimOptions) error {
 	bin, err := ffmpegBin()
 	if err != nil {
 		return err
 	}
-
 	if opts.OutputPath == "" {
 		return fmt.Errorf("output_path is required")
 	}
-
-	args := []string{
-		"-i", opts.InputPath,
-		"-ss", fmt.Sprintf("%.3f", opts.StartTime),
-		"-t", fmt.Sprintf("%.3f", opts.Duration),
-		"-c:v", "libx264",
-		"-c:a", "aac",
-		"-movflags", "+faststart",
-		"-preset", "fast",
-		"-crf", "18",
-		"-y",
-		opts.OutputPath,
-	}
-
-	cmd := exec.CommandContext(ctx, bin, args...)
+	enc := selectEncoder()
+	cmd := exec.CommandContext(ctx, bin, trimArgs(opts, enc, false)...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
@@ -242,19 +340,8 @@ func TrimWithProgress(ctx context.Context, opts TrimOptions, cb ProgressCallback
 	}
 	totalDuration := probeResult.Duration
 
-	args := []string{
-		"-i", opts.InputPath,
-		"-ss", fmt.Sprintf("%.3f", opts.StartTime),
-		"-t", fmt.Sprintf("%.3f", opts.Duration),
-		"-c:v", "libx264",
-		"-c:a", "aac",
-		"-movflags", "+faststart",
-		"-preset", "fast",
-		"-crf", "18",
-		"-progress", "pipe:1",
-		"-y",
-		opts.OutputPath,
-	}
+	enc := selectEncoder()
+	args := trimArgs(opts, enc, true)
 
 	cmd := exec.CommandContext(ctx, bin, args...)
 	stdout, err := cmd.StdoutPipe()
