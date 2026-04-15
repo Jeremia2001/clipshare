@@ -1,0 +1,60 @@
+# Desktop App (Wails) .gitignore
+
+# Build directories
+/build/
+/build/bin/
+/dist/
+frontend/dist/
+
+# Frontend dependencies
+frontend/node_modules/
+frontend/.pnpm-store/
+
+# Frontend build
+frontend/dist/
+frontend/.vite/
+
+# Wails specific
+frontend/wailsjs/go/main/App.js
+frontend/wailsjs/go/main/App.d.ts
+
+# Environment files
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/pnpm-debug.log*
+
+# Go specific
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+vendor/
+
+# Test artifacts
+*.cover
+coverage.out
+
+# Temporary files
+*.tmp
+*.temp
+/tmp/

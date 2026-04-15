@@ -1,0 +1,48 @@
+# Go Server .gitignore
+
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/server
+/clipshare
+*.out
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.cover
+*.cov
+coverage.html
+coverage.txt
+coverage.out
+
+# Go workspace
+go.work
+go.work.sum
+
+# Dependency directories (vendor/)
+vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*~
+
+# Environment files
+.env
+.env.local
+!.env.example
+
+# Local development data
+/tmp/
+*.db
+
+# Build artifacts
+/build/
+/dist/
+/bin/

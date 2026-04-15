@@ -1,0 +1,26 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "clipshare-desktop",
+  "outputfilename": "clipshare-desktop",
+  "frontend": {
+    "dir": "./frontend",
+    "install": "npm install",
+    "build": "npm run build",
+    "dev": "npm run dev",
+    "package": "{}"
+  },
+  "author": {
+    "name": "ClipShare",
+    "email": "dev@clipshare.io"
+  },
+  "Info": {
+    "companyName": "ClipShare",
+    "productName": "ClipShare",
+    "productVersion": "0.0.1",
+    "copyright": "Copyright © 2024",
+    "comments": "Open source clip sharing platform"
+  },
+  "build": {
+    "nsisType": "multiple"
+  }
+}

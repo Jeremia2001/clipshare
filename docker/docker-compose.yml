@@ -1,0 +1,109 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: clipshare
+      POSTGRES_PASSWORD: clipshare123
+      POSTGRES_DB: clipshare
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - clipshare
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U clipshare"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - clipshare
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  rustfs:
+    image: rustfs/rustfs:latest
+    environment:
+      RUSTFS_ROOT_USER: clipshare
+      RUSTFS_ROOT_PASSWORD: clipshare123
+    volumes:
+      - rustfs_data:/data
+      - rustfs_logs:/logs
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    networks:
+      - clipshare
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9001/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    # Create data and logs directories with proper permissions
+    user: "10001:10001"
+
+  api:
+    build:
+      context: ../apps/server
+      dockerfile: Dockerfile
+    environment:
+      ENV: development
+      SERVER_HOST: 0.0.0.0
+      SERVER_PORT: 8080
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: clipshare
+      DB_PASSWORD: clipshare123
+      DB_NAME: clipshare
+      DB_SSLMODE: disable
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      RUSTFS_ENDPOINT: rustfs:9000
+      RUSTFS_PUBLIC_ENDPOINT: ""
+      RUSTFS_ACCESS_KEY: clipshare
+      RUSTFS_SECRET_KEY: clipshare123
+      RUSTFS_USE_SSL: "false"
+      JWT_SECRET: change-this-to-a-random-secret-in-production
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      FRONTEND_URL: http://localhost:3000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rustfs:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    networks:
+      - clipshare
+    command: >
+      sh -c "
+        /app/migrate up &&
+        /app/server
+      "
+
+volumes:
+  postgres_data:
+  redis_data:
+  rustfs_data:
+  rustfs_logs:
+
+networks:
+  clipshare:
+    driver: bridge

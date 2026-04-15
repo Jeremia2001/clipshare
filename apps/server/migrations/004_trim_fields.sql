@@ -1,0 +1,7 @@
+-- +goose Up
+ALTER TABLE clips ADD COLUMN IF NOT EXISTS trim_start_seconds DOUBLE PRECISION NOT NULL DEFAULT 0;
+ALTER TABLE clips ADD COLUMN IF NOT EXISTS trim_end_seconds DOUBLE PRECISION NOT NULL DEFAULT 0;
+
+-- +goose Down
+ALTER TABLE clips DROP COLUMN IF EXISTS trim_end_seconds;
+ALTER TABLE clips DROP COLUMN IF EXISTS trim_start_seconds;

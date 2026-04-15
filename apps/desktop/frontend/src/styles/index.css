@@ -1,0 +1,100 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  color-scheme: dark;
+  color: rgba(255, 255, 255, 0.9);
+  background-color: #0d1a12;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background-color: #0d1a12;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+@layer base {
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: #111c14;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #304c34;
+    border-radius: 4px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #3b5d3f;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-forest-600 hover:bg-forest-500 text-white px-4 py-2 rounded-lg font-medium transition-all duration-200 ease-out;
+    @apply focus:outline-none focus:ring-2 focus:ring-forest-400 focus:ring-offset-2 focus:ring-offset-forest-950;
+  }
+
+  .btn-secondary {
+    @apply bg-sand-800/50 hover:bg-sand-700/50 text-sand-200 px-4 py-2 rounded-lg font-medium transition-all duration-200 ease-out border border-sand-700/50;
+    @apply focus:outline-none focus:ring-2 focus:ring-sand-500 focus:ring-offset-2 focus:ring-offset-forest-950;
+  }
+
+  .btn-ghost {
+    @apply text-sand-400 hover:text-sand-200 hover:bg-sand-800/30 px-3 py-2 rounded-lg transition-all duration-200;
+  }
+
+  .card {
+    @apply bg-forest-950/80 border border-forest-800/60 rounded-xl;
+  }
+
+  .card-body {
+    @apply p-6;
+  }
+
+  .input-field {
+    @apply w-full bg-forest-950 border border-forest-800 rounded-lg px-4 py-2.5 text-sand-100 placeholder-sand-600 transition-all duration-200;
+    @apply focus:outline-none focus:ring-2 focus:ring-forest-500 focus:border-forest-600;
+  }
+
+  .section-header {
+    @apply px-6 py-4 border-b border-forest-800/60;
+  }
+
+  .btn-danger {
+    @apply bg-earth-900/50 hover:bg-earth-800/50 text-earth-300 px-4 py-2 rounded-lg font-medium transition-all duration-200 ease-out border border-earth-700/50;
+  }
+
+  .badge {
+    @apply inline-flex items-center px-2 py-0.5 text-xs font-medium rounded;
+  }
+
+  .badge-forest {
+    @apply badge bg-forest-800/60 text-forest-300;
+  }
+
+  .badge-earth {
+    @apply badge bg-earth-800/60 text-earth-300;
+  }
+
+  .badge-moss {
+    @apply badge bg-moss-800/60 text-moss-300;
+  }
+}
