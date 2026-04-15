@@ -6,6 +6,8 @@
 /dist/
 frontend/dist/
 
+/bin/
+
 # Frontend dependencies
 frontend/node_modules/
 frontend/.pnpm-store/
