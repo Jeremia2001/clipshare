@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import {
@@ -22,6 +22,8 @@ function LibraryPage() {
   const [shareClipId, setShareClipId] = useState<string | null>(null)
   const [shares, setShares] = useState<ShareResponse[]>([])
   const [deleting, setDeleting] = useState<string | null>(null)
+  const [thumbnailUrls, setThumbnailUrls] = useState<Record<string, string>>({})
+  const thumbnailUrlsRef = useRef<Record<string, string>>({})
 
   const fetchClips = useCallback(async () => {
     setLoading(true)
@@ -39,6 +41,30 @@ function LibraryPage() {
     fetchClips()
   }, [fetchClips])
 
+  useEffect(() => {
+    const token = localStorage.getItem('access_token') || ''
+    const clipsWithThumbnail = clips.filter(c => c.thumbnail_url)
+    if (clipsWithThumbnail.length === 0) return
+
+    // Revoke previous object URLs that are no longer needed
+    const currentIds = new Set(clipsWithThumbnail.map(c => c.id))
+    Object.entries(thumbnailUrlsRef.current).forEach(([id, url]) => {
+      if (!currentIds.has(id)) URL.revokeObjectURL(url)
+    })
+
+    clipsWithThumbnail.forEach(clip => {
+      if (thumbnailUrlsRef.current[clip.id]) return // already loaded
+      fetch(clip.thumbnail_url!, { headers: { Authorization: `Bearer ${token}` } })
+        .then(r => r.ok ? r.blob() : Promise.reject())
+        .then(blob => {
+          const objectUrl = URL.createObjectURL(blob)
+          thumbnailUrlsRef.current[clip.id] = objectUrl
+          setThumbnailUrls(prev => ({ ...prev, [clip.id]: objectUrl }))
+        })
+        .catch(() => {})
+    })
+  }, [clips])
+
   const handleDelete = async (clipId: string) => {
     setDeleting(clipId)
     try {
@@ -55,7 +81,7 @@ function LibraryPage() {
       const { data } = await shareApi.list(clipId)
       const mapped = (data.shares || []).map((s: any) => ({
         share_code: s.share_code,
-        share_url: `/s/${s.share_code}`,
+        share_url: s.share_url,
         share: s,
       }))
       setShares(mapped)
@@ -178,12 +204,18 @@ function LibraryPage() {
           {filteredClips.map(clip => (
             <div key={clip.id} className="card group hover:border-forest-700/80 transition-colors cursor-pointer" onClick={() => navigate(`/clips/${clip.id}`)}>
               <div className="relative aspect-video bg-forest-900 rounded-t-xl overflow-hidden">
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <Video className="h-8 w-8 text-forest-700" />
-                </div>
-                <div className="absolute bottom-2 right-2 bg-forest-950/80 text-sand-300 text-xs px-1.5 py-0.5 rounded">
-                  {formatDuration(clip.duration_seconds)}
-                </div>
+                {thumbnailUrls[clip.id] ? (
+                  <img src={thumbnailUrls[clip.id]} alt={clip.title} className="absolute inset-0 w-full h-full object-cover" />
+                ) : (
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <Video className="h-8 w-8 text-forest-700" />
+                  </div>
+                )}
+                {clip.duration_seconds > 0 && (
+                  <div className="absolute bottom-2 right-2 bg-forest-950/80 text-sand-300 text-xs px-1.5 py-0.5 rounded">
+                    {formatDuration(clip.duration_seconds)}
+                  </div>
+                )}
                 {!clip.is_public && (
                   <div className="absolute top-2 left-2">
                     <Lock className="h-3.5 w-3.5 text-earth-400" />
@@ -242,10 +274,16 @@ function LibraryPage() {
             {filteredClips.map(clip => (
               <div key={clip.id} className="flex items-center space-x-4 px-5 py-3.5 hover:bg-forest-900/40 transition-colors group cursor-pointer" onClick={() => navigate(`/clips/${clip.id}`)}>
                 <div className="w-24 h-14 bg-forest-900 rounded-lg flex items-center justify-center shrink-0 overflow-hidden relative">
-                  <Video className="h-5 w-5 text-forest-700" />
-                  <div className="absolute bottom-1 right-1 bg-forest-950/80 text-sand-300 text-[10px] px-1 py-0.5 rounded">
-                    {formatDuration(clip.duration_seconds)}
-                  </div>
+                  {thumbnailUrls[clip.id] ? (
+                    <img src={thumbnailUrls[clip.id]} alt={clip.title} className="absolute inset-0 w-full h-full object-cover" />
+                  ) : (
+                    <Video className="h-5 w-5 text-forest-700" />
+                  )}
+                  {clip.duration_seconds > 0 && (
+                    <div className="absolute bottom-1 right-1 bg-forest-950/80 text-sand-300 text-[10px] px-1 py-0.5 rounded">
+                      {formatDuration(clip.duration_seconds)}
+                    </div>
+                  )}
                 </div>
                 <div className="flex-1 min-w-0">
                   <h4 className="text-sm font-medium text-sand-200 truncate">{clip.title}</h4>
@@ -323,11 +361,11 @@ function LibraryPage() {
 
               {shares.map(s => (
                 <div key={s.share_code} className="flex items-center space-x-2 p-2.5 bg-forest-900/50 rounded-lg">
-                  <code className="text-sm text-forest-300 flex-1 truncate">{s.share_code}</code>
+                  <code className="text-sm text-forest-300 flex-1 truncate">{s.share_url}</code>
                   <button
-                    onClick={() => { navigator.clipboard.writeText(s.share_code) }}
+                    onClick={() => { navigator.clipboard.writeText(s.share_url) }}
                     className="p-1.5 text-sand-500 hover:text-sand-300 rounded transition-colors shrink-0"
-                    title="Copy"
+                    title="Copy link"
                   >
                     <Share2 className="h-3.5 w-3.5" />
                   </button>

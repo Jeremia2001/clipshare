@@ -10,7 +10,6 @@ import (
 type Config struct {
 	Server   ServerConfig
 	Database DatabaseConfig
-	Redis    RedisConfig
 	RustFS   RustFSConfig
 	Auth     AuthConfig
 	Email    EmailConfig
@@ -20,6 +19,7 @@ type ServerConfig struct {
 	Host        string
 	Port        int
 	Environment string
+	PublicURL   string
 	FrontendURL string
 }
 
@@ -30,13 +30,6 @@ type DatabaseConfig struct {
 	Password string
 	Database string
 	SSLMode  string
-}
-
-type RedisConfig struct {
-	Host     string
-	Port     int
-	Password string
-	DB       int
 }
 
 type RustFSConfig struct {
@@ -78,6 +71,7 @@ func Load() (*Config, error) {
 			Host:        getEnv("SERVER_HOST", "0.0.0.0"),
 			Port:        getEnvAsInt("SERVER_PORT", 8080),
 			Environment: getEnv("ENV", "development"),
+			PublicURL:   getEnv("SERVER_PUBLIC_URL", "http://localhost:8080"),
 			FrontendURL: getEnv("FRONTEND_URL", "http://localhost:3000"),
 		},
 		Database: DatabaseConfig{
@@ -87,12 +81,6 @@ func Load() (*Config, error) {
 			Password: getEnv("DB_PASSWORD", "clipshare"),
 			Database: getEnv("DB_NAME", "clipshare"),
 			SSLMode:  getEnv("DB_SSLMODE", "disable"),
-		},
-		Redis: RedisConfig{
-			Host:     getEnv("REDIS_HOST", "localhost"),
-			Port:     getEnvAsInt("REDIS_PORT", 6379),
-			Password: getEnv("REDIS_PASSWORD", ""),
-			DB:       getEnvAsInt("REDIS_DB", 0),
 		},
 		RustFS: RustFSConfig{
 			Endpoint:       getEnv("RUSTFS_ENDPOINT", "localhost:9000"),
@@ -147,10 +135,6 @@ func (c *Config) DatabaseURL() string {
 		c.Database.Database,
 		c.Database.SSLMode,
 	)
-}
-
-func (c *Config) RedisURL() string {
-	return fmt.Sprintf("%s:%d", c.Redis.Host, c.Redis.Port)
 }
 
 func getEnv(key, defaultValue string) string {

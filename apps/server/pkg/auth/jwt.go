@@ -37,6 +37,10 @@ func (j *JWTManager) AccessTokenExpiry() time.Duration {
 	return j.accessTokenExpiry
 }
 
+func (j *JWTManager) Secret() []byte {
+	return j.secret
+}
+
 func (j *JWTManager) GenerateAccessToken(userID uuid.UUID, email string, isAdmin bool) (string, error) {
 	claims := TokenClaims{
 		UserID:    userID,

@@ -28,17 +28,20 @@ type encoderConfig struct {
 }
 
 // hwEncoders are tried in order; first one that works is used.
+// All encoders must output yuv420p — browsers require 8-bit 4:2:0 H.264.
 var hwEncoders = []encoderConfig{
 	// AMD AMF (RX series, Vega, etc.)
-	{"h264_amf", []string{"-quality", "speed", "-rc", "cqp", "-qp_i", "22", "-qp_p", "24", "-qp_b", "26"}},
-	// NVIDIA NVENC
-	{"h264_nvenc", []string{"-preset", "p1", "-tune", "ll", "-rc", "vbr", "-cq", "23"}},
+	{"h264_amf", []string{"-quality", "balanced", "-rc", "cqp", "-qp_i", "22", "-qp_p", "24", "-pix_fmt", "yuv420p", "-profile:v", "high", "-level", "4.1"}},
+	// NVIDIA NVENC — no -tune ll (low-latency mode kills B-frames and makes files browser-incompatible)
+	{"h264_nvenc", []string{"-preset", "p4", "-rc", "vbr", "-cq", "23", "-pix_fmt", "yuv420p", "-profile:v", "high", "-level", "4.1"}},
 	// Intel Quick Sync
-	{"h264_qsv", []string{"-preset", "veryfast", "-global_quality", "25"}},
+	{"h264_qsv", []string{"-preset", "medium", "-global_quality", "25", "-pix_fmt", "yuv420p", "-profile:v", "high", "-level", "4.1"}},
 }
 
 var swEncoder = encoderConfig{
-	"libx264", []string{"-preset", "ultrafast", "-crf", "23"},
+	// fast gives much better compression than ultrafast with only a small speed penalty;
+	// yuv420p + high/4.1 ensures broad browser compatibility.
+	"libx264", []string{"-preset", "fast", "-crf", "23", "-pix_fmt", "yuv420p", "-profile:v", "high", "-level", "4.1"},
 }
 
 var (
@@ -61,12 +64,10 @@ func selectEncoder() encoderConfig {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	for _, enc := range hwEncoders {
-		cmd := exec.CommandContext(ctx, bin,
-			"-f", "lavfi", "-i", "nullsrc=s=64x64:d=0.04",
-			"-frames:v", "1",
-			"-c:v", enc.name,
-			"-f", "null", "-",
-		)
+		// Include -pix_fmt yuv420p in the probe so we test the encoder with
+		// the exact pixel format we'll use during actual encoding.
+		args := []string{"-f", "lavfi", "-i", "nullsrc=s=64x64:d=0.04", "-frames:v", "1", "-c:v", enc.name, "-pix_fmt", "yuv420p", "-f", "null", "-"}
+		cmd := exec.CommandContext(ctx, bin, args...)
 		if cmd.Run() == nil {
 			e := enc
 			encCached = &e

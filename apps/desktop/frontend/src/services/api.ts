@@ -81,6 +81,8 @@ export interface Clip {
   view_count: number
   created_at: string
   updated_at: string
+  view_url?: string
+  thumbnail_url?: string
 }
 
 export interface Share {
@@ -173,6 +175,25 @@ export const clipApi = {
 
   delete: (id: string) =>
     api.delete(`/clips/${id}`),
+
+  uploadThumbnail: (clipId: string, blob: Blob): Promise<void> => {
+    const apiUrl = localStorage.getItem('api_url') || 'http://localhost:8080'
+    const url = `${apiUrl}/api/v1/clips/${clipId}/thumbnail`
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      xhr.open('POST', url)
+      const token = localStorage.getItem('access_token')
+      if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) resolve()
+        else reject(new Error(`Thumbnail upload failed: ${xhr.status}`))
+      }
+      xhr.onerror = () => reject(new Error('Network error'))
+      const formData = new FormData()
+      formData.append('thumbnail', blob, 'thumbnail.jpg')
+      xhr.send(formData)
+    })
+  },
 }
 
 export const shareApi = {

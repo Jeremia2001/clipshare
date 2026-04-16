@@ -7,6 +7,8 @@ import (
 	"io"
 	"log"
 	"net/url"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"clipshare/internal/models"
@@ -21,6 +23,7 @@ type ClipService struct {
 	shareRepo repository.ShareRepository
 	userRepo  repository.UserRepository
 	rustfs    *storage.RustFSClient
+	publicURL string
 }
 
 func NewClipService(
@@ -28,12 +31,14 @@ func NewClipService(
 	shareRepo repository.ShareRepository,
 	userRepo repository.UserRepository,
 	rustfs *storage.RustFSClient,
+	publicURL string,
 ) *ClipService {
 	return &ClipService{
 		clipRepo:  clipRepo,
 		shareRepo: shareRepo,
 		userRepo:  userRepo,
 		rustfs:    rustfs,
+		publicURL: publicURL,
 	}
 }
 
@@ -132,22 +137,27 @@ func (s *ClipService) GetClipViewURL(ctx context.Context, clip *models.Clip) (st
 	return viewURL.String(), nil
 }
 
-func (s *ClipService) StreamClipFile(ctx context.Context, clipID uuid.UUID) (io.ReadCloser, int64, string, error) {
-	clip, err := s.clipRepo.GetByID(ctx, clipID)
-	if err != nil {
-		return nil, 0, "", err
+// ClipContentType derives the MIME type from the original filename, defaulting
+// to video/mp4. This avoids a StatObject round-trip to MinIO.
+func ClipContentType(filename string) string {
+	switch strings.ToLower(filepath.Ext(filename)) {
+	case ".webm":
+		return "video/webm"
+	case ".mov":
+		return "video/quicktime"
+	case ".mkv":
+		return "video/x-matroska"
+	case ".avi":
+		return "video/x-msvideo"
+	default:
+		return "video/mp4"
 	}
-	if clip == nil {
-		return nil, 0, "", fmt.Errorf("clip not found")
-	}
+}
 
-	log.Printf("[StreamClipFile] Streaming clip %s, bucket=%s, key=%s", clipID, clip.RustfsBucket, clip.RustfsObjectKey)
-
-	info, err := s.rustfs.StatObject(ctx, clip.RustfsBucket, clip.RustfsObjectKey)
-	if err != nil {
-		log.Printf("[StreamClipFile] StatObject failed: %v", err)
-		return nil, 0, "", fmt.Errorf("failed to stat object: %w", err)
-	}
+// StreamClipFile opens a reader for the full clip object.
+// It uses FileSizeBytes from the database record so no StatObject round-trip is needed.
+func (s *ClipService) StreamClipFile(ctx context.Context, clip *models.Clip) (io.ReadCloser, int64, string, error) {
+	log.Printf("[StreamClipFile] Streaming clip %s, bucket=%s, key=%s", clip.ID, clip.RustfsBucket, clip.RustfsObjectKey)
 
 	obj, err := s.rustfs.GetObject(ctx, clip.RustfsBucket, clip.RustfsObjectKey)
 	if err != nil {
@@ -155,14 +165,23 @@ func (s *ClipService) StreamClipFile(ctx context.Context, clipID uuid.UUID) (io.
 		return nil, 0, "", fmt.Errorf("failed to get object: %w", err)
 	}
 
-	contentType := "video/mp4"
-	if info.ContentType != "" {
-		contentType = info.ContentType
+	contentType := ClipContentType(clip.OriginalFilename)
+	log.Printf("[StreamClipFile] Streaming %d bytes, type=%s", clip.FileSizeBytes, contentType)
+	return obj, clip.FileSizeBytes, contentType, nil
+}
+
+// StreamClipFileRange opens a reader that returns only bytes [start, end] (both
+// inclusive) of the clip object. It uses MinIO's native range request so the
+// server never downloads the full file when serving a partial-content response.
+func (s *ClipService) StreamClipFileRange(ctx context.Context, clip *models.Clip, start, end int64) (io.ReadCloser, error) {
+	log.Printf("[StreamClipFileRange] Streaming clip %s range %d-%d", clip.ID, start, end)
+
+	obj, err := s.rustfs.GetObjectRange(ctx, clip.RustfsBucket, clip.RustfsObjectKey, start, end)
+	if err != nil {
+		log.Printf("[StreamClipFileRange] GetObjectRange failed: %v", err)
+		return nil, fmt.Errorf("failed to get object range: %w", err)
 	}
-
-	log.Printf("[StreamClipFile] Streaming %d bytes, type=%s", info.Size, contentType)
-
-	return obj, info.Size, contentType, nil
+	return obj, nil
 }
 
 func (s *ClipService) ListUserClips(ctx context.Context, userID uuid.UUID, page, perPage int) (*ClipListResponse, error) {
@@ -231,6 +250,59 @@ func (s *ClipService) UpdateClip(ctx context.Context, clipID, userID uuid.UUID, 
 	}
 
 	return clip, nil
+}
+
+func (s *ClipService) UploadThumbnail(ctx context.Context, clipID, userID uuid.UUID, reader io.Reader, size int64, contentType string) error {
+	clip, err := s.clipRepo.GetByID(ctx, clipID)
+	if err != nil {
+		return fmt.Errorf("failed to get clip: %w", err)
+	}
+	if clip == nil {
+		return fmt.Errorf("clip not found")
+	}
+	if clip.UserID != userID {
+		return fmt.Errorf("not authorized")
+	}
+
+	_, thumbnailBucket, _ := s.rustfs.BucketNames()
+	objectKey := fmt.Sprintf("thumbnails/%s.jpg", clipID.String())
+
+	if err := s.rustfs.PutObject(ctx, thumbnailBucket, objectKey, reader, size, contentType); err != nil {
+		return fmt.Errorf("failed to store thumbnail: %w", err)
+	}
+
+	clip.ThumbnailKey = &objectKey
+	if err := s.clipRepo.Update(ctx, clip); err != nil {
+		return fmt.Errorf("failed to update clip: %w", err)
+	}
+
+	return nil
+}
+
+func (s *ClipService) StreamThumbnail(ctx context.Context, clipID uuid.UUID) (io.ReadCloser, int64, string, error) {
+	clip, err := s.clipRepo.GetByID(ctx, clipID)
+	if err != nil || clip == nil {
+		return nil, 0, "", fmt.Errorf("clip not found")
+	}
+	if clip.ThumbnailKey == nil || *clip.ThumbnailKey == "" {
+		return nil, 0, "", fmt.Errorf("no thumbnail")
+	}
+
+	_, thumbnailBucket, _ := s.rustfs.BucketNames()
+	info, err := s.rustfs.StatObject(ctx, thumbnailBucket, *clip.ThumbnailKey)
+	if err != nil {
+		return nil, 0, "", fmt.Errorf("thumbnail not found: %w", err)
+	}
+	obj, err := s.rustfs.GetObject(ctx, thumbnailBucket, *clip.ThumbnailKey)
+	if err != nil {
+		return nil, 0, "", fmt.Errorf("failed to get thumbnail: %w", err)
+	}
+
+	contentType := info.ContentType
+	if contentType == "" {
+		contentType = "image/jpeg"
+	}
+	return obj, info.Size, contentType, nil
 }
 
 func (s *ClipService) DeleteClip(ctx context.Context, clipID, userID uuid.UUID) error {
@@ -307,7 +379,7 @@ func (s *ClipService) CreateShare(ctx context.Context, userID uuid.UUID, req Cre
 		return nil, fmt.Errorf("failed to create share: %w", err)
 	}
 
-	shareURL := buildShareURL(shareCode, req.CustomSlug)
+	shareURL := s.buildShareURL(shareCode, req.CustomSlug)
 
 	return &ShareResponse{
 		ShareCode: shareCode,
@@ -346,77 +418,88 @@ func (s *ClipService) DeleteShare(ctx context.Context, shareID, userID uuid.UUID
 	return s.shareRepo.Delete(ctx, shareID)
 }
 
-func (s *ClipService) GetSharedClip(ctx context.Context, code string, password *string) (*models.Clip, string, error) {
-	var share *models.Share
-	var err error
-
-	share, err = s.shareRepo.GetByShareCode(ctx, code)
+func (s *ClipService) ValidateShareAccess(ctx context.Context, code string, password *string) (*models.Share, *models.Clip, error) {
+	share, err := s.shareRepo.GetByShareCode(ctx, code)
 	if err != nil {
-		return nil, "", err
+		return nil, nil, err
 	}
 	if share == nil {
 		share, err = s.shareRepo.GetByCustomSlug(ctx, code)
 		if err != nil {
-			return nil, "", err
+			return nil, nil, err
 		}
 	}
 
 	if share == nil {
-		return nil, "", fmt.Errorf("share not found")
+		return nil, nil, fmt.Errorf("share not found")
 	}
 
 	if !share.IsActive {
-		return nil, "", fmt.Errorf("share is no longer active")
+		return nil, nil, fmt.Errorf("share is no longer active")
 	}
 
 	if share.ExpiresAt != nil && time.Now().After(*share.ExpiresAt) {
 		_ = s.shareRepo.Deactivate(ctx, share.ID)
-		return nil, "", fmt.Errorf("share has expired")
+		return nil, nil, fmt.Errorf("share has expired")
 	}
 
 	if share.MaxViews != nil && share.ViewCount >= *share.MaxViews {
 		_ = s.shareRepo.Deactivate(ctx, share.ID)
-		return nil, "", fmt.Errorf("share has reached maximum views")
+		return nil, nil, fmt.Errorf("share has reached maximum views")
 	}
 
 	if share.PasswordHash != nil {
 		if password == nil || *password == "" {
-			return nil, "", fmt.Errorf("password required")
+			return nil, nil, fmt.Errorf("password required")
 		}
 		hash := sha256Hash(*password)
 		if hash != *share.PasswordHash {
-			return nil, "", fmt.Errorf("incorrect password")
+			return nil, nil, fmt.Errorf("incorrect password")
 		}
 	}
 
 	clip, err := s.clipRepo.GetByID(ctx, share.ClipID)
 	if err != nil {
-		return nil, "", err
+		return nil, nil, err
 	}
 	if clip == nil {
-		return nil, "", fmt.Errorf("clip not found")
+		return nil, nil, fmt.Errorf("clip not found")
+	}
+
+	return share, clip, nil
+}
+
+func (s *ClipService) IncrementShareViewCounts(ctx context.Context, clipID, shareID uuid.UUID) {
+	_ = s.clipRepo.IncrementViewCount(ctx, clipID)
+	_ = s.shareRepo.IncrementViewCount(ctx, shareID)
+}
+
+func (s *ClipService) GetSharedClip(ctx context.Context, code string, password *string) (*models.Clip, error) {
+	share, clip, err := s.ValidateShareAccess(ctx, code, password)
+	if err != nil {
+		return nil, err
 	}
 
 	_ = s.clipRepo.IncrementViewCount(ctx, clip.ID)
 	_ = s.shareRepo.IncrementViewCount(ctx, share.ID)
 
-	viewURL, err := s.GetClipViewURL(ctx, clip)
-	if err != nil {
-		return nil, "", err
-	}
-
-	return clip, viewURL, nil
+	return clip, nil
 }
 
 func generateShareCode() string {
 	return uuid.New().String()[:8]
 }
 
-func buildShareURL(code string, slug *string) string {
+func (s *ClipService) ShareURL(shareCode string, customSlug *string) string {
+	return s.buildShareURL(shareCode, customSlug)
+}
+
+func (s *ClipService) buildShareURL(code string, slug *string) string {
+	path := fmt.Sprintf("/api/v1/s/%s", code)
 	if slug != nil && *slug != "" {
-		return fmt.Sprintf("/s/%s", url.PathEscape(*slug))
+		path = fmt.Sprintf("/api/v1/s/%s", url.PathEscape(*slug))
 	}
-	return fmt.Sprintf("/s/%s", code)
+	return strings.TrimRight(s.publicURL, "/") + path
 }
 
 func sha256Hash(s string) string {

@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
@@ -38,6 +40,8 @@ func (h *ClipHandler) RegisterRoutes(r fiber.Router) {
 
 	clips.Post("/upload", middleware.RequireAuth, h.UploadFile)
 	clips.Post("/:id/finalize", middleware.RequireAuth, h.FinalizeUpload)
+	clips.Post("/:id/thumbnail", middleware.RequireAuth, h.UploadThumbnail)
+	clips.Get("/:id/thumbnail", middleware.RequireAuth, h.GetThumbnail)
 	clips.Get("/:id/download", middleware.RequireAuth, h.DownloadClip)
 
 	shares := clips.Group("/:clipId/shares")
@@ -191,14 +195,24 @@ func (h *ClipHandler) ListClips(c *fiber.Ctx) error {
 
 	type clipWithURL struct {
 		*models.Clip
-		ViewURL string `json:"view_url"`
+		ViewURL      string `json:"view_url"`
+		ThumbnailURL string `json:"thumbnail_url,omitempty"`
 	}
 
 	clipsWithURL := make([]clipWithURL, len(resp.Clips))
 	for i, clip := range resp.Clips {
+		viewURL, err := h.clipService.GetClipViewURL(c.Context(), clip)
+		if err != nil {
+			viewURL = h.buildAbsoluteURL(c, fmt.Sprintf("/api/v1/clips/%s/download", clip.ID))
+		}
+		thumbnailURL := ""
+		if clip.ThumbnailKey != nil && *clip.ThumbnailKey != "" {
+			thumbnailURL = h.buildAbsoluteURL(c, fmt.Sprintf("/api/v1/clips/%s/thumbnail", clip.ID))
+		}
 		clipsWithURL[i] = clipWithURL{
-			Clip:    clip,
-			ViewURL: fmt.Sprintf("/api/v1/clips/%s/download", clip.ID),
+			Clip:         clip,
+			ViewURL:      viewURL,
+			ThumbnailURL: thumbnailURL,
 		}
 	}
 
@@ -239,9 +253,20 @@ func (h *ClipHandler) GetClip(c *fiber.Ctx) error {
 		})
 	}
 
+	viewURL, err := h.clipService.GetClipViewURL(c.Context(), clip)
+	if err != nil {
+		viewURL = h.buildAbsoluteURL(c, fmt.Sprintf("/api/v1/clips/%s/download", clipID))
+	}
+
+	thumbnailURL := ""
+	if clip.ThumbnailKey != nil && *clip.ThumbnailKey != "" {
+		thumbnailURL = h.buildAbsoluteURL(c, fmt.Sprintf("/api/v1/clips/%s/thumbnail", clipID))
+	}
+
 	return c.JSON(fiber.Map{
-		"clip":     clip,
-		"view_url": fmt.Sprintf("/api/v1/clips/%s/download", clipID),
+		"clip":          clip,
+		"view_url":      viewURL,
+		"thumbnail_url": thumbnailURL,
 	})
 }
 
@@ -359,8 +384,26 @@ func (h *ClipHandler) ListShares(c *fiber.Ctx) error {
 
 	enrichShares(shares)
 
+	result := make([]fiber.Map, len(shares))
+	for i, s := range shares {
+		result[i] = fiber.Map{
+			"id":           s.ID,
+			"clip_id":      s.ClipID,
+			"user_id":      s.UserID,
+			"share_code":   s.ShareCode,
+			"custom_slug":  s.CustomSlug,
+			"has_password": s.HasPassword,
+			"expires_at":   s.ExpiresAt,
+			"max_views":    s.MaxViews,
+			"view_count":   s.ViewCount,
+			"is_active":    s.IsActive,
+			"created_at":   s.CreatedAt,
+			"share_url":    h.clipService.ShareURL(s.ShareCode, s.CustomSlug),
+		}
+	}
+
 	return c.JSON(fiber.Map{
-		"shares": shares,
+		"shares": result,
 	})
 }
 
@@ -402,7 +445,7 @@ func (h *ClipHandler) GetSharedClip(c *fiber.Ctx) error {
 		password = &pw
 	}
 
-	clip, _, err := h.clipService.GetSharedClip(c.Context(), code, password)
+	clip, err := h.clipService.GetSharedClip(c.Context(), code, password)
 	if err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 			"error": err.Error(),
@@ -414,10 +457,12 @@ func (h *ClipHandler) GetSharedClip(c *fiber.Ctx) error {
 		title = "Shared Clip"
 	}
 
-	videoURL := fmt.Sprintf("/api/v1/s/%s/video", code)
-	if pw := c.Query("password"); pw != "" {
-		videoURL += "?password=" + pw
+	videoURL := h.buildAbsoluteURL(c, fmt.Sprintf("/api/v1/s/%s/video", code))
+	if password != nil {
+		videoURL += "?password=" + url.QueryEscape(*password)
 	}
+
+	contentType := services.ClipContentType(clip.OriginalFilename)
 
 	html := fmt.Sprintf(`<!DOCTYPE html>
 <html lang="en">
@@ -453,13 +498,13 @@ func (h *ClipHandler) GetSharedClip(c *fiber.Ctx) error {
   <div class="container">
     <h1>%s</h1>
     <video controls autoplay preload="metadata">
-      <source src="%s">
+      <source src="%s" type="%s">
       Your browser does not support the video tag.
     </video>
     <p class="meta">Shared via clipshare</p>
   </div>
 </body>
-</html>`, title, title, videoURL)
+</html>`, title, title, videoURL, contentType)
 
 	c.Set("Content-Type", "text/html; charset=utf-8")
 	return c.SendString(html)
@@ -478,27 +523,119 @@ func (h *ClipHandler) StreamSharedClip(c *fiber.Ctx) error {
 		password = &pw
 	}
 
-	clip, _, err := h.clipService.GetSharedClip(c.Context(), code, password)
+	share, clip, err := h.clipService.ValidateShareAccess(c.Context(), code, password)
 	if err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 			"error": err.Error(),
 		})
 	}
 
-	reader, size, contentType, err := h.clipService.StreamClipFile(c.Context(), clip.ID)
+	h.clipService.IncrementShareViewCounts(c.Context(), clip.ID, share.ID)
+
+	size := clip.FileSizeBytes
+	contentType := services.ClipContentType(clip.OriginalFilename)
+
+	c.Set("Content-Type", contentType)
+	c.Set("Accept-Ranges", "bytes")
+
+	rangeHeader := c.Get("Range")
+	if rangeHeader == "" {
+		reader, _, _, err := h.clipService.StreamClipFile(c.Context(), clip)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+				"error": err.Error(),
+			})
+		}
+		c.Set("Content-Length", strconv.FormatInt(size, 10))
+		c.Response().SetBodyStream(reader, int(size))
+		return nil
+	}
+
+	start, end, err := parseRange(rangeHeader, size)
+	if err != nil {
+		return c.Status(fiber.StatusRequestedRangeNotSatisfiable).JSON(fiber.Map{
+			"error": "invalid range",
+		})
+	}
+
+	reader, err := h.clipService.StreamClipFileRange(c.Context(), clip, start, end)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": err.Error(),
 		})
 	}
-	defer reader.Close()
+
+	contentLength := end - start + 1
+	c.Set("Content-Length", strconv.FormatInt(contentLength, 10))
+	c.Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, size))
+	c.Status(fiber.StatusPartialContent)
+	c.Response().SetBodyStream(&limitReadCloser{
+		Reader: io.LimitReader(reader, contentLength),
+		Closer: reader,
+	}, int(contentLength))
+	return nil
+}
+
+func (h *ClipHandler) UploadThumbnail(c *fiber.Ctx) error {
+	userID, err := h.getUserID(c)
+	if err != nil {
+		return err
+	}
+
+	clipIDStr := c.Params("id")
+	clipID, err := uuid.Parse(clipIDStr)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid clip ID"})
+	}
+
+	file, err := c.FormFile("thumbnail")
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "thumbnail field is required"})
+	}
+
+	f, err := file.Open()
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to open file"})
+	}
+	defer f.Close()
+
+	contentType := file.Header.Get("Content-Type")
+	if contentType == "" {
+		contentType = "image/jpeg"
+	}
+
+	if err := h.clipService.UploadThumbnail(c.Context(), clipID, userID, f, file.Size, contentType); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	return c.JSON(fiber.Map{"success": true})
+}
+
+func (h *ClipHandler) GetThumbnail(c *fiber.Ctx) error {
+	clipIDStr := c.Params("id")
+	clipID, err := uuid.Parse(clipIDStr)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid clip ID"})
+	}
+
+	obj, size, contentType, err := h.clipService.StreamThumbnail(c.Context(), clipID)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": err.Error()})
+	}
+	// No defer close — fasthttp calls Close() on the stream after SetBodyStream finishes.
 
 	c.Set("Content-Type", contentType)
 	c.Set("Content-Length", strconv.FormatInt(size, 10))
-	c.Set("Accept-Ranges", "bytes")
+	c.Set("Cache-Control", "public, max-age=3600")
+	c.Response().SetBodyStream(obj, int(size))
+	return nil
+}
 
-	_, err = io.Copy(c.Response().BodyWriter(), reader)
-	return err
+// limitReadCloser limits reads to n bytes and closes the underlying ReadCloser
+// when fasthttp is done with the stream (fasthttp calls Close() if present).
+type limitReadCloser struct {
+	io.Reader
+	io.Closer
 }
 
 func enrichShare(s *models.Share) {
@@ -513,6 +650,56 @@ func enrichShares(shares []*models.Share) {
 	}
 }
 
+func parseRange(rangeHeader string, size int64) (start, end int64, err error) {
+	if !strings.HasPrefix(rangeHeader, "bytes=") {
+		return 0, 0, fmt.Errorf("invalid range format")
+	}
+	spec := strings.TrimPrefix(rangeHeader, "bytes=")
+	parts := strings.Split(spec, "-")
+	if len(parts) != 2 {
+		return 0, 0, fmt.Errorf("invalid range format")
+	}
+	if parts[0] == "" {
+		end = size - 1
+		start, err = strconv.ParseInt(parts[1], 10, 64)
+		if err != nil {
+			return 0, 0, err
+		}
+		start = size - start
+		if start < 0 {
+			start = 0
+		}
+	} else {
+		start, err = strconv.ParseInt(parts[0], 10, 64)
+		if err != nil {
+			return 0, 0, err
+		}
+		if parts[1] == "" {
+			end = size - 1
+		} else {
+			end, err = strconv.ParseInt(parts[1], 10, 64)
+			if err != nil {
+				return 0, 0, err
+			}
+		}
+	}
+	if start > end || start >= size {
+		return 0, 0, fmt.Errorf("range out of bounds")
+	}
+	if end >= size {
+		end = size - 1
+	}
+	return start, end, nil
+}
+
+func (h *ClipHandler) buildAbsoluteURL(c *fiber.Ctx, path string) string {
+	scheme := "http"
+	if c.Protocol() == "https" {
+		scheme = "https"
+	}
+	return scheme + "://" + c.Hostname() + path
+}
+
 func (h *ClipHandler) DownloadClip(c *fiber.Ctx) error {
 	clipIDStr := c.Params("id")
 	clipID, err := uuid.Parse(clipIDStr)
@@ -522,17 +709,57 @@ func (h *ClipHandler) DownloadClip(c *fiber.Ctx) error {
 		})
 	}
 
-	clip, size, contentType, err := h.clipService.StreamClipFile(c.Context(), clipID)
-	if err != nil {
+	clip, err := h.clipService.GetClip(c.Context(), clipID)
+	if err != nil || clip == nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": "Clip not found",
+		})
+	}
+
+	size := clip.FileSizeBytes
+	contentType := services.ClipContentType(clip.OriginalFilename)
+
+	c.Set("Content-Type", contentType)
+	c.Set("Accept-Ranges", "bytes")
+
+	rangeHeader := c.Get("Range")
+	if rangeHeader == "" {
+		// Full file — open the object without a range header.
+		reader, _, _, err := h.clipService.StreamClipFile(c.Context(), clip)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+				"error": err.Error(),
+			})
+		}
+		// No defer close — fasthttp calls Close() on the stream after SetBodyStream finishes.
+		c.Set("Content-Length", strconv.FormatInt(size, 10))
+		c.Response().SetBodyStream(reader, int(size))
+		return nil
+	}
+
+	start, end, err := parseRange(rangeHeader, size)
+	if err != nil {
+		return c.Status(fiber.StatusRequestedRangeNotSatisfiable).JSON(fiber.Map{
+			"error": "invalid range",
+		})
+	}
+
+	// Use native MinIO range request — no full-file download, no seek.
+	reader, err := h.clipService.StreamClipFileRange(c.Context(), clip, start, end)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": err.Error(),
 		})
 	}
-	defer clip.Close()
+	// No defer close — fasthttp calls Close() on the stream after SetBodyStream finishes.
 
-	c.Set("Content-Type", contentType)
-	c.Set("Content-Length", strconv.FormatInt(size, 10))
-
-	_, err = io.Copy(c.Response().BodyWriter(), clip)
-	return err
+	contentLength := end - start + 1
+	c.Set("Content-Length", strconv.FormatInt(contentLength, 10))
+	c.Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, size))
+	c.Status(fiber.StatusPartialContent)
+	c.Response().SetBodyStream(&limitReadCloser{
+		Reader: io.LimitReader(reader, contentLength),
+		Closer: reader,
+	}, int(contentLength))
+	return nil
 }

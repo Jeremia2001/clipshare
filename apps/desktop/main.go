@@ -14,8 +14,8 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
-	goruntime "runtime"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"sync"
 	"time"
@@ -48,8 +48,9 @@ type App struct {
 	mediaDir        string
 	mediaMu         sync.RWMutex
 	mediaMap        map[string]mediaEntry
-	streamMu        sync.RWMutex
+	streamMu        sync.Mutex
 	streamMap       map[string]streamEntry
+	streamCounter   int
 	mediaServerAddr string
 	mediaServer     *http.Server
 }
@@ -122,6 +123,14 @@ func (a *App) startMediaServer() error {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/media/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodOptions {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Headers", "Range, Content-Type")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
 		name := strings.TrimPrefix(r.URL.Path, "/media/")
 
 		resolved, ok := a.mediaGet(name)
@@ -154,36 +163,58 @@ func (a *App) startMediaServer() error {
 	})
 
 	mux.HandleFunc("/stream/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodOptions {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Headers", "Range, Content-Type")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
 		key := strings.TrimPrefix(r.URL.Path, "/stream/")
 
-		a.streamMu.RLock()
+		a.streamMu.Lock()
 		entry, ok := a.streamMap[key]
-		a.streamMu.RUnlock()
+		a.streamMu.Unlock()
 		if !ok {
 			http.Error(w, "not found", http.StatusNotFound)
 			return
 		}
 
-		upstream, err := http.NewRequestWithContext(r.Context(), r.Method, entry.url, nil)
+		upstream, err := http.NewRequestWithContext(r.Context(), http.MethodGet, entry.url, nil)
 		if err != nil {
 			http.Error(w, "bad upstream url", http.StatusInternalServerError)
 			return
 		}
-		if entry.token != "" {
+		if entry.token != "" && !isPresignedS3URL(entry.url) {
 			upstream.Header.Set("Authorization", "Bearer "+entry.token)
 		}
 		if rng := r.Header.Get("Range"); rng != "" {
 			upstream.Header.Set("Range", rng)
 		}
 
-		resp, err := http.DefaultClient.Do(upstream)
+		client := &http.Client{Timeout: 0}
+		resp, err := client.Do(upstream)
 		if err != nil {
 			http.Error(w, "upstream request failed", http.StatusBadGateway)
 			return
 		}
 		defer resp.Body.Close()
 
-		for _, h := range []string{"Content-Type", "Content-Length", "Content-Range", "Accept-Ranges"} {
+		contentType := resp.Header.Get("Content-Type")
+		if contentType == "" || contentType == "application/octet-stream" {
+			ext := strings.ToLower(filepath.Ext(entry.url))
+			if ext == ".mp4" {
+				contentType = "video/mp4"
+			} else if ext == ".webm" {
+				contentType = "video/webm"
+			} else {
+				contentType = "video/mp4"
+			}
+		}
+		w.Header().Set("Content-Type", contentType)
+
+		for _, h := range []string{"Content-Length", "Content-Range", "Accept-Ranges"} {
 			if v := resp.Header.Get(h); v != "" {
 				w.Header().Set(h, v)
 			}
@@ -191,7 +222,23 @@ func (a *App) startMediaServer() error {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(resp.StatusCode)
-		io.Copy(w, resp.Body) //nolint:errcheck
+
+		flusher, canFlush := w.(http.Flusher)
+		buf := make([]byte, 32*1024)
+		for {
+			n, readErr := resp.Body.Read(buf)
+			if n > 0 {
+				if _, writeErr := w.Write(buf[:n]); writeErr != nil {
+					return
+				}
+				if canFlush {
+					flusher.Flush()
+				}
+			}
+			if readErr != nil {
+				return
+			}
+		}
 	})
 
 	a.mediaServer = &http.Server{Handler: mux}
@@ -203,6 +250,14 @@ func (a *App) startMediaServer() error {
 // Frontend builds video URLs as GetMediaServerURL() + "/media/" + serveName.
 func (a *App) GetMediaServerURL() string {
 	return "http://" + a.mediaServerAddr
+}
+
+func isPresignedS3URL(rawURL string) bool {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	return u.Query().Get("X-Amz-Signature") != "" || u.Query().Get("X-Amz-Credential") != ""
 }
 
 func (a *App) shutdown(ctx context.Context) {
@@ -291,6 +346,28 @@ type TrimRequest struct {
 	Duration  float64 `json:"duration"`
 }
 
+func (a *App) ExtractThumbnail(serveName string, seekTime float64) (string, error) {
+	resolved, ok := a.mediaGet(serveName)
+	if !ok {
+		return "", fmt.Errorf("file not found: %s", serveName)
+	}
+
+	thumbName := fmt.Sprintf("thumb-%d.jpg", time.Now().UnixNano())
+	thumbPath := filepath.Join(a.mediaDir, thumbName)
+
+	if err := ffmpeg.Thumbnail(a.ctx, ffmpeg.ThumbnailOptions{
+		InputPath:  resolved,
+		OutputPath: thumbPath,
+		Time:       seekTime,
+		Width:      640,
+	}); err != nil {
+		return "", fmt.Errorf("thumbnail extraction: %w", err)
+	}
+
+	a.mediaSet(thumbName, thumbPath, true) // deletable: temp file
+	return thumbName, nil
+}
+
 func (a *App) TrimVideo(req TrimRequest) (string, error) {
 	id := fmt.Sprintf("trim-%d", a.mediaLen())
 	outputPath := filepath.Join(a.mediaDir, id+".mp4")
@@ -371,12 +448,8 @@ func (a *App) ProxyVideoURL(videoURL string, token string) (string, error) {
 	if videoURL == "" {
 		return "", fmt.Errorf("videoURL is required")
 	}
-	key := fmt.Sprintf("stream-%d", func() int {
-		a.streamMu.RLock()
-		n := len(a.streamMap)
-		a.streamMu.RUnlock()
-		return n
-	}())
+	key := fmt.Sprintf("stream-%d", a.streamCounter)
+	a.streamCounter++
 	a.streamMu.Lock()
 	a.streamMap[key] = streamEntry{url: videoURL, token: token}
 	a.streamMu.Unlock()
@@ -470,6 +543,22 @@ func (a *App) UploadFile(serveName string) (*UploadResult, error) {
 		return nil, fmt.Errorf("parse response: %w", err)
 	}
 
+	// Extract and upload thumbnail synchronously — FFmpeg reads the already-local
+	// file so this is fast and doesn't need browser involvement.
+	if ffmpeg.IsAvailable() {
+		thumbPath := filepath.Join(a.mediaDir, fmt.Sprintf("thumb-%s.jpg", uploadResp.Clip.ID))
+		if err := ffmpeg.Thumbnail(a.ctx, ffmpeg.ThumbnailOptions{
+			InputPath:  resolved,
+			OutputPath: thumbPath,
+			Time:       0, // first frame of whatever file was uploaded (already trimmed if applicable)
+			Width:      640,
+		}); err == nil {
+			// Best-effort: ignore upload errors, thumbnail is optional
+			_ = a.uploadThumbnailDirect(thumbPath, uploadResp.Clip.ID, apiBase)
+			os.Remove(thumbPath)
+		}
+	}
+
 	return &UploadResult{
 		ClipID:    uploadResp.Clip.ID,
 		ObjectKey: uploadResp.ObjectKey,
@@ -478,6 +567,42 @@ func (a *App) UploadFile(serveName string) (*UploadResult, error) {
 	}, nil
 }
 
+func (a *App) uploadThumbnailDirect(thumbPath, clipID, apiBase string) error {
+	data, err := os.ReadFile(thumbPath)
+	if err != nil {
+		return err
+	}
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("thumbnail", "thumbnail.jpg")
+	if err != nil {
+		return err
+	}
+	if _, err := part.Write(data); err != nil {
+		return err
+	}
+	writer.Close()
+
+	req, err := http.NewRequest("POST", apiBase+"/api/v1/clips/"+clipID+"/thumbnail", &body)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("thumbnail upload failed (%d): %s", resp.StatusCode, body)
+	}
+	return nil
+}
 
 func main() {
 	app := NewApp()

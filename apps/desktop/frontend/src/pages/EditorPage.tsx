@@ -54,9 +54,18 @@ function VideoPlayer({ src, onDurationChange, onDimensionsChange, onTrimChange }
       if (!dur || !isFinite(dur)) return
       setDuration(dur)
       onDurationChangeRef.current(dur)
-      onDimensionsChangeRef.current(v.videoWidth, v.videoHeight)
+      // videoWidth/videoHeight may be 0 at loadedmetadata in WebView2; canPlay handles that case
+      if (v.videoWidth > 0 && v.videoHeight > 0) {
+        onDimensionsChangeRef.current(v.videoWidth, v.videoHeight)
+      }
       setTrimEnd(dur)
       onTrimChangeRef.current(0, dur)
+    }
+    // canplay fires after enough data is decoded — dimensions are reliably available here
+    const onCanPlay = () => {
+      if (v.videoWidth > 0 && v.videoHeight > 0) {
+        onDimensionsChangeRef.current(v.videoWidth, v.videoHeight)
+      }
     }
     const onPlay = () => setPlaying(true)
     const onPause = () => setPlaying(false)
@@ -64,12 +73,14 @@ function VideoPlayer({ src, onDurationChange, onDimensionsChange, onTrimChange }
 
     v.addEventListener('timeupdate', onTime)
     v.addEventListener('loadedmetadata', onDur)
+    v.addEventListener('canplay', onCanPlay)
     v.addEventListener('play', onPlay)
     v.addEventListener('pause', onPause)
     v.addEventListener('ended', onEnded)
     return () => {
       v.removeEventListener('timeupdate', onTime)
       v.removeEventListener('loadedmetadata', onDur)
+      v.removeEventListener('canplay', onCanPlay)
       v.removeEventListener('play', onPlay)
       v.removeEventListener('pause', onPause)
       v.removeEventListener('ended', onEnded)
@@ -213,6 +224,8 @@ function EditorPage() {
   const { user } = useAuth()
   const navigate = useNavigate()
 
+  const selectingRef = useRef(false)
+
   const [step, setStep] = useState<EditorStep>('select')
   const [selectedFilePath, setSelectedFilePath] = useState<string>('')
   const [fileName, setFileName] = useState('')
@@ -268,6 +281,8 @@ function EditorPage() {
   }, [])
 
   const handleSelectFile = useCallback(async () => {
+    if (selectingRef.current) return
+    selectingRef.current = true
     try {
       const filePath = await OpenFileDialog()
       if (!filePath) return
@@ -298,6 +313,8 @@ function EditorPage() {
       }
     } catch (err: any) {
       setError(err.message || 'Failed to select file')
+    } finally {
+      selectingRef.current = false
     }
   }, [ffmpegAvailable, mediaServerURL])
 
@@ -333,14 +350,14 @@ function EditorPage() {
         setProcessingProgress('Uploading trimmed clip...')
         const result = await UploadFile(trimmedServeName)
         setProcessing(false)
-        await finalizeUpload(result.clip_id, result.file_size_bytes, result.file_name)
+        await finalizeUpload(result.clip_id, result.file_size_bytes)
       } catch (err: any) {
         console.error('[EditorPage] Native ffmpeg trim error:', err)
         setProcessing(false)
         setError('Trimming failed. Uploading full clip instead.')
         try {
           const result = await UploadFile(servedName)
-          await finalizeUpload(result.clip_id, result.file_size_bytes, result.file_name)
+          await finalizeUpload(result.clip_id, result.file_size_bytes)
         } catch (uploadErr: any) {
           setError(uploadErr.message || 'Upload failed')
           setStep('editing')
@@ -352,7 +369,7 @@ function EditorPage() {
         setProcessingProgress('Uploading clip...')
         const result = await UploadFile(servedName)
         setProcessing(false)
-        await finalizeUpload(result.clip_id, result.file_size_bytes, result.file_name)
+        await finalizeUpload(result.clip_id, result.file_size_bytes)
       } catch (err: any) {
         setError(err.message || 'Upload failed')
         setStep('editing')
@@ -362,12 +379,12 @@ function EditorPage() {
     }
   }
 
-  const finalizeUpload = async (clipId: string, fileSize: number, originalFilename: string) => {
+  const finalizeUpload = async (clipId: string, fileSize: number) => {
     try {
       await clipApi.finalizeUpload(clipId, {
         title,
         description: description || undefined,
-        original_filename: originalFilename,
+        original_filename: fileName,
         file_size_bytes: fileSize,
         duration_seconds: Math.round(videoDuration),
         width: videoWidth,
@@ -443,7 +460,7 @@ function EditorPage() {
             <p className="mt-2 text-sand-500 max-w-md mx-auto">
               Choose a video file from your computer to trim and edit locally
             </p>
-            <button className="btn-primary mt-6 inline-flex items-center space-x-2" onClick={handleSelectFile}>
+            <button className="btn-primary mt-6 inline-flex items-center space-x-2" onClick={(e) => { e.stopPropagation(); handleSelectFile() }}>
               <FolderOpen className="h-4 w-4" />
               <span>Browse Files</span>
             </button>

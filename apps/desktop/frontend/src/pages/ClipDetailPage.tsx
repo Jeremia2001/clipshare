@@ -15,6 +15,7 @@ function ClipDetailPage() {
 
   const [clip, setClip] = useState<Clip | null>(null)
   const [viewUrl, setViewUrl] = useState<string | null>(null)
+  const [videoError, setVideoError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -34,15 +35,16 @@ function ClipDetailPage() {
     setLoading(true)
     clipApi.get(id).then(async ({ data }) => {
       setClip(data.clip)
-      if (data.view_url) {
-        const token = localStorage.getItem('access_token') || ''
-        try {
-          const proxyUrl = await ProxyVideoURL(data.view_url, token)
-          setViewUrl(proxyUrl)
-        } catch {
-          setViewUrl(data.view_url)
-        }
-      } else {
+      // Use the API download endpoint for desktop playback — presigned storage
+      // URLs (e.g. http://minio:9000/...) are internal and unreachable from the
+      // host process. The download endpoint is always accessible via the API URL.
+      const apiUrl = localStorage.getItem('api_url') || 'http://localhost:8080'
+      const downloadUrl = `${apiUrl}/api/v1/clips/${id}/download`
+      const token = localStorage.getItem('access_token') || ''
+      try {
+        const proxyUrl = await ProxyVideoURL(downloadUrl, token)
+        setViewUrl(proxyUrl)
+      } catch {
         setViewUrl(null)
       }
       setTitle(data.clip.title)
@@ -56,7 +58,7 @@ function ClipDetailPage() {
     shareApi.list(id).then(({ data }) => {
       const mapped = (data.shares || []).map((s: any) => ({
         share_code: s.share_code,
-        share_url: `/s/${s.share_code}`,
+        share_url: s.share_url,
         share: s,
       }))
       setShares(mapped)
@@ -153,10 +155,22 @@ function ClipDetailPage() {
           <div className="card">
             <div className="card-body p-0 overflow-hidden">
               {viewUrl ? (
-                <video src={viewUrl} controls className="w-full max-h-[500px] bg-black" />
+                <video
+                  src={viewUrl}
+                  controls
+                  preload="auto"
+                  playsInline
+                  className="w-full max-h-[500px] bg-black"
+                  onError={() => setVideoError('Failed to load video')}
+                />
               ) : (
                 <div className="bg-forest-900 aspect-video flex items-center justify-center">
                   <p className="text-sand-600 text-sm">Video preview unavailable</p>
+                </div>
+              )}
+              {videoError && viewUrl && (
+                <div className="bg-earth-900/40 border border-earth-700/50 text-earth-300 px-4 py-3 rounded-b-lg text-sm">
+                  {videoError}
                 </div>
               )}
             </div>
@@ -204,10 +218,9 @@ function ClipDetailPage() {
                 <>
                   {clip.description && <p className="text-sand-400 text-sm">{clip.description}</p>}
                   <div className="grid grid-cols-2 gap-3 text-sm text-sand-500">
-                    <div>Duration: {formatDuration(clip.duration_seconds)}</div>
-                    <div>Resolution: {clip.width}x{clip.height}</div>
+                    {clip.duration_seconds > 0 && <div>Duration: {formatDuration(clip.duration_seconds)}</div>}
+                    {(clip.width > 0 && clip.height > 0) && <div>Resolution: {clip.width}x{clip.height}</div>}
                     <div>Size: {(clip.file_size_bytes / 1024 / 1024).toFixed(1)} MB</div>
-                    <div>Filename: {clip.original_filename}</div>
                   </div>
                 </>
               )}
@@ -240,10 +253,10 @@ function ClipDetailPage() {
 
               {shares.map(s => (
                 <div key={s.share_code} className="flex items-center space-x-2 p-2 bg-forest-900/50 rounded-lg">
-                  <code className="text-xs text-forest-300 flex-1 truncate">{s.share_code}</code>
+                  <code className="text-xs text-forest-300 flex-1 truncate">{s.share_url}</code>
                   {s.share.has_password && <Lock className="h-3 w-3 text-earth-500 shrink-0" />}
-                  <button onClick={() => handleCopyCode(s.share_code)} className="p-1 text-sand-500 hover:text-sand-300 shrink-0" title="Copy">
-                    {copiedCode === s.share_code ? <Check className="h-3 w-3 text-moss-400" /> : <Copy className="h-3 w-3" />}
+                  <button onClick={() => handleCopyCode(s.share_url)} className="p-1 text-sand-500 hover:text-sand-300 shrink-0" title="Copy link">
+                    {copiedCode === s.share_url ? <Check className="h-3 w-3 text-moss-400" /> : <Copy className="h-3 w-3" />}
                   </button>
                 </div>
               ))}

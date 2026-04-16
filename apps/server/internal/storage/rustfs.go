@@ -102,6 +102,16 @@ func (r *RustFSClient) GetObject(ctx context.Context, bucket, objectKey string) 
 	return r.client.GetObject(ctx, bucket, objectKey, minio.GetObjectOptions{})
 }
 
+// GetObjectRange fetches only the bytes [start, end] (both inclusive) from the
+// object store, avoiding a full-file download when serving HTTP range requests.
+func (r *RustFSClient) GetObjectRange(ctx context.Context, bucket, objectKey string, start, end int64) (*minio.Object, error) {
+	opts := minio.GetObjectOptions{}
+	if err := opts.SetRange(start, end); err != nil {
+		return nil, err
+	}
+	return r.client.GetObject(ctx, bucket, objectKey, opts)
+}
+
 func (r *RustFSClient) BucketNames() (clips, thumbnails, processed string) {
 	return r.buckets.Clips, r.buckets.Thumbnails, r.buckets.Processed
 }

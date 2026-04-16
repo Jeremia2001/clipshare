@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -24,7 +25,6 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
-	"github.com/redis/go-redis/v9"
 )
 
 func seedDevUser(ctx context.Context, db *sqlx.DB) {
@@ -64,20 +64,6 @@ func main() {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
 	defer db.Close()
-
-	// Initialize Redis
-	rdb := redis.NewClient(&redis.Options{
-		Addr:     cfg.RedisURL(),
-		Password: cfg.Redis.Password,
-		DB:       cfg.Redis.DB,
-	})
-	defer rdb.Close()
-
-	// Test Redis connection
-	ctx := context.Background()
-	if err := rdb.Ping(ctx).Err(); err != nil {
-		log.Fatalf("Failed to connect to Redis: %v", err)
-	}
 
 	// Initialize RustFS client
 	rustfsClient, err := storage.NewRustFSClient(
@@ -131,6 +117,7 @@ func main() {
 		shareRepo,
 		userRepo,
 		rustfsClient,
+		cfg.Server.PublicURL,
 	)
 
 	// Initialize handlers
@@ -141,14 +128,19 @@ func main() {
 	app := fiber.New(fiber.Config{
 		ErrorHandler: middleware.ErrorHandler,
 		ReadTimeout:  5 * time.Minute,
-		WriteTimeout: 30 * time.Second,
+		WriteTimeout: 0,       // no write timeout — video streaming can take arbitrarily long
 		BodyLimit:    1 << 30, // 1GB
 	})
 
 	// Global middleware
 	app.Use(recover.New())
 	app.Use(logger.New())
-	app.Use(compress.New())
+	app.Use(compress.New(compress.Config{
+		Next: func(c *fiber.Ctx) bool {
+			ct := string(c.Response().Header.ContentType())
+			return strings.HasPrefix(ct, "video/") || strings.HasPrefix(ct, "application/octet-stream")
+		},
+	}))
 	app.Use(middleware.CORSConfig())
 
 	// Auth middleware
@@ -161,7 +153,7 @@ func main() {
 
 	// Seed dev user in development mode
 	if cfg.Server.Environment == "development" {
-		seedDevUser(ctx, db)
+		seedDevUser(context.Background(), db)
 	}
 
 	// Health check

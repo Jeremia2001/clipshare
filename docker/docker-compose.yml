@@ -19,20 +19,6 @@ services:
       timeout: 5s
       retries: 5
 
-  redis:
-    image: redis:7-alpine
-    volumes:
-      - redis_data:/data
-    ports:
-      - "6379:6379"
-    networks:
-      - clipshare
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-
   rustfs:
     image: rustfs/rustfs:latest
     environment:
@@ -68,8 +54,6 @@ services:
       DB_PASSWORD: clipshare123
       DB_NAME: clipshare
       DB_SSLMODE: disable
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
       RUSTFS_ENDPOINT: rustfs:9000
       RUSTFS_PUBLIC_ENDPOINT: ""
       RUSTFS_ACCESS_KEY: clipshare
@@ -83,8 +67,6 @@ services:
       FRONTEND_URL: http://localhost:3000
     depends_on:
       postgres:
-        condition: service_healthy
-      redis:
         condition: service_healthy
       rustfs:
         condition: service_healthy
@@ -100,7 +82,6 @@ services:
 
 volumes:
   postgres_data:
-  redis_data:
   rustfs_data:
   rustfs_logs:
 
