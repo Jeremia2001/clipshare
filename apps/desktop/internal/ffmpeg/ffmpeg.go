@@ -30,23 +30,18 @@ type encoderConfig struct {
 // hwEncoders are tried in order; first one that works is used.
 // All encoders must output yuv420p — browsers require 8-bit 4:2:0 H.264.
 var hwEncoders = []encoderConfig{
-	// AMD AMF (RX series, Vega, etc.)
-	{"h264_amf", []string{"-quality", "balanced", "-rc", "cqp", "-qp_i", "22", "-qp_p", "24", "-pix_fmt", "yuv420p", "-profile:v", "high", "-level", "4.1"}},
-	// NVIDIA NVENC — no -tune ll (low-latency mode kills B-frames and makes files browser-incompatible)
-	{"h264_nvenc", []string{"-preset", "p4", "-rc", "vbr", "-cq", "23", "-pix_fmt", "yuv420p", "-profile:v", "high", "-level", "4.1"}},
-	// Intel Quick Sync
-	{"h264_qsv", []string{"-preset", "medium", "-global_quality", "25", "-pix_fmt", "yuv420p", "-profile:v", "high", "-level", "4.1"}},
+	{"h264_amf", []string{"-quality", "speed", "-rc", "cqp", "-qp_i", "26", "-qp_p", "28", "-pix_fmt", "yuv420p", "-profile:v", "high", "-level", "4.1"}},
+	{"h264_nvenc", []string{"-preset", "p1", "-rc", "vbr", "-cq", "28", "-pix_fmt", "yuv420p", "-profile:v", "high", "-level", "4.1"}},
+	{"h264_qsv", []string{"-preset", "veryfast", "-global_quality", "30", "-pix_fmt", "yuv420p", "-profile:v", "high", "-level", "4.1"}},
 }
 
 var swEncoder = encoderConfig{
-	// fast gives much better compression than ultrafast with only a small speed penalty;
-	// yuv420p + high/4.1 ensures broad browser compatibility.
-	"libx264", []string{"-preset", "fast", "-crf", "23", "-pix_fmt", "yuv420p", "-profile:v", "high", "-level", "4.1"},
+	"libx264", []string{"-preset", "ultrafast", "-crf", "28", "-pix_fmt", "yuv420p", "-profile:v", "high", "-level", "4.1"},
 }
 
 var (
-	encMu      sync.Mutex
-	encCached  *encoderConfig
+	encMu     sync.Mutex
+	encCached *encoderConfig
 )
 
 // selectEncoder detects the best available H.264 encoder once and caches it.
@@ -251,15 +246,28 @@ type TrimOptions struct {
 	OutputPath string  `json:"output_path"`
 	StartTime  float64 `json:"start_time"`
 	Duration   float64 `json:"duration"`
+	StreamCopy bool    `json:"stream_copy"`
 }
 
 func trimArgs(opts TrimOptions, enc encoderConfig, progress bool) []string {
-	// -ss BEFORE -i = fast input seek (jumps to nearest keyframe instantly).
-	// -ss AFTER -i  = slow output seek (decodes every frame from the start).
+	if opts.StreamCopy {
+		args := []string{
+			"-ss", fmt.Sprintf("%.3f", opts.StartTime),
+			"-i", opts.InputPath,
+			"-t", fmt.Sprintf("%.3f", opts.Duration),
+			"-c:v", "copy",
+			"-c:a", "copy",
+			"-movflags", "+faststart",
+			"-y", opts.OutputPath,
+		}
+		return args
+	}
+
 	args := []string{
 		"-ss", fmt.Sprintf("%.3f", opts.StartTime),
 		"-i", opts.InputPath,
 		"-t", fmt.Sprintf("%.3f", opts.Duration),
+		"-noaccurate_seek",
 		"-c:v", enc.name,
 	}
 	args = append(args, enc.args...)
@@ -303,8 +311,8 @@ func Thumbnail(ctx context.Context, opts ThumbnailOptions) error {
 	}
 
 	args := []string{
-		"-i", opts.InputPath,
 		"-ss", fmt.Sprintf("%.3f", opts.Time),
+		"-i", opts.InputPath,
 		"-vframes", "1",
 	}
 
@@ -330,6 +338,10 @@ func cmdRun(ctx context.Context, bin string, args []string) error {
 type ProgressCallback func(progress float64)
 
 func TrimWithProgress(ctx context.Context, opts TrimOptions, cb ProgressCallback) error {
+	if opts.StreamCopy {
+		return Trim(ctx, opts)
+	}
+
 	bin, err := ffmpegBin()
 	if err != nil {
 		return err
@@ -390,4 +402,14 @@ func TrimWithProgress(ctx context.Context, opts TrimOptions, cb ProgressCallback
 func IsAvailable() bool {
 	_, err := findBin()
 	return err == nil
+}
+
+func CanStreamCopy(ctx context.Context, inputPath string) bool {
+	result, err := Probe(ctx, inputPath)
+	if err != nil {
+		return false
+	}
+	ext := strings.ToLower(filepath.Ext(inputPath))
+	isMP4Container := ext == ".mp4" || ext == ".m4v" || ext == ".mov"
+	return isMP4Container && (result.Codec == "h264" || result.Codec == "avc1" || result.Codec == "h264_nvenc" || result.Codec == "h264_amf" || result.Codec == "h264_qsv")
 }

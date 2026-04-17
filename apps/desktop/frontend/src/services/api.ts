@@ -1,6 +1,13 @@
 import axios from 'axios'
 
-const apiUrl = localStorage.getItem('api_url') || 'http://localhost:8080'
+export const defaultApiUrl = 'http://127.0.0.1:8080'
+
+export function normalizeApiUrl(url: string | null): string {
+  if (!url) return defaultApiUrl
+  return url.replace('//localhost:', '//127.0.0.1:').replace(/\/+$/, '')
+}
+
+const apiUrl = normalizeApiUrl(localStorage.getItem('api_url'))
 
 export const api = axios.create({
   baseURL: `${apiUrl}/api/v1`,
@@ -52,8 +59,9 @@ api.interceptors.response.use(
 )
 
 export const setApiUrl = (url: string) => {
-  localStorage.setItem('api_url', url)
-  api.defaults.baseURL = `${url}/api/v1`
+  const normalized = normalizeApiUrl(url)
+  localStorage.setItem('api_url', normalized)
+  api.defaults.baseURL = `${normalized}/api/v1`
 }
 
 export interface Clip {
@@ -114,7 +122,7 @@ export interface ShareResponse {
 
 export const clipApi = {
   uploadFile: (file: File): Promise<{ data: { clip: Clip; object_key: string } }> => {
-    const apiUrl = localStorage.getItem('api_url') || 'http://localhost:8080'
+    const apiUrl = normalizeApiUrl(localStorage.getItem('api_url'))
     const url = `${apiUrl}/api/v1/clips/upload`
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest()
@@ -177,7 +185,7 @@ export const clipApi = {
     api.delete(`/clips/${id}`),
 
   uploadThumbnail: (clipId: string, blob: Blob): Promise<void> => {
-    const apiUrl = localStorage.getItem('api_url') || 'http://localhost:8080'
+    const apiUrl = normalizeApiUrl(localStorage.getItem('api_url'))
     const url = `${apiUrl}/api/v1/clips/${clipId}/thumbnail`
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest()

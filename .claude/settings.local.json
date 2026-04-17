@@ -8,7 +8,15 @@
       "Bash(wails generate:*)",
       "Bash(go mod *)",
       "Bash(npx tsc *)",
-      "Bash(go vet *)"
+      "Bash(go vet *)",
+      "Bash(curl -s -I http://localhost:8080/api/v1/s/698fbed7)",
+      "Bash(curl -s -v -o /dev/null -H \"Range: bytes=8388608-12582911\" http://localhost:8080/api/v1/s/698fbed7/video)",
+      "Bash(curl -s -o /dev/null -w 'status=%{http_code} size=%{size_download} time=%{time_total}\\\\n' -H 'Range: bytes=__TRACKED_VAR__' http://localhost:8080/api/v1/s/698fbed7/video)",
+      "Bash(curl -s -o /dev/null -w \"status=%{http_code} size=%{size_download}\\\\n\" \"http://localhost:8080/api/v1/s/698fbed7/video\")",
+      "Bash(curl -s -o /tmp/full.bin -w \"status=%{http_code} size=%{size_download}\\\\n\" \"http://localhost:8080/api/v1/s/698fbed7/video\")",
+      "Read(//c/code/clipshare/**)",
+      "Bash(curl -s -v -o /dev/null -H \"Range: bytes=8388608-12582911\" \"http://localhost:8080/api/v1/s/698fbed7/video\")",
+      "Bash(docker exec *)"
     ]
   }
 }

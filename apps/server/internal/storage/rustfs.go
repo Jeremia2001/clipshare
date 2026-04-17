@@ -104,12 +104,34 @@ func (r *RustFSClient) GetObject(ctx context.Context, bucket, objectKey string) 
 
 // GetObjectRange fetches only the bytes [start, end] (both inclusive) from the
 // object store, avoiding a full-file download when serving HTTP range requests.
-func (r *RustFSClient) GetObjectRange(ctx context.Context, bucket, objectKey string, start, end int64) (*minio.Object, error) {
+//
+// Workaround for a rustfs bug: ranges that begin anywhere in the second half
+// of an internal 16 MiB block come back as 0 bytes + "unexpected EOF". We
+// round `start` down to the nearest 16 MiB boundary when requesting from
+// rustfs, then skip the extra prefix bytes so the caller sees a reader that
+// begins at the real `start`. Worst case this fetches ~16 MiB of unused data
+// (intra-host to rustfs), but only the client-requested window is streamed on
+// the wire.
+func (r *RustFSClient) GetObjectRange(ctx context.Context, bucket, objectKey string, start, end int64) (io.ReadCloser, error) {
+	const alignment int64 = 16 * 1024 * 1024
+	alignedStart := start - (start % alignment)
+
 	opts := minio.GetObjectOptions{}
-	if err := opts.SetRange(start, end); err != nil {
+	if err := opts.SetRange(alignedStart, end); err != nil {
 		return nil, err
 	}
-	return r.client.GetObject(ctx, bucket, objectKey, opts)
+	obj, err := r.client.GetObject(ctx, bucket, objectKey, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	if skip := start - alignedStart; skip > 0 {
+		if _, err := io.CopyN(io.Discard, obj, skip); err != nil {
+			obj.Close()
+			return nil, err
+		}
+	}
+	return obj, nil
 }
 
 func (r *RustFSClient) BucketNames() (clips, thumbnails, processed string) {

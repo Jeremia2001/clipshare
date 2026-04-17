@@ -1,14 +1,17 @@
 import { useState } from 'react'
 import { useAuth } from '../hooks/useAuth'
 import { Settings as SettingsIcon, Mail, HardDrive, Server, Shield } from 'lucide-react'
+import { normalizeApiUrl } from '../services/api'
 
 function SettingsPage() {
   const { user, isDevMode } = useAuth()
-  const [apiUrl, setApiUrl] = useState(localStorage.getItem('api_url') || 'http://localhost:8080')
+  const [apiUrl, setApiUrl] = useState(normalizeApiUrl(localStorage.getItem('api_url')))
   const [saved, setSaved] = useState(false)
 
   const handleSave = () => {
-    localStorage.setItem('api_url', apiUrl)
+    const normalized = normalizeApiUrl(apiUrl)
+    localStorage.setItem('api_url', normalized)
+    setApiUrl(normalized)
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
   }
@@ -47,7 +50,7 @@ function SettingsPage() {
                 value={apiUrl}
                 onChange={(e) => setApiUrl(e.target.value)}
                 className="input-field"
-                placeholder="http://localhost:8080"
+                placeholder="http://127.0.0.1:8080"
               />
               <button onClick={handleSave} className="btn-primary whitespace-nowrap">
                 Save

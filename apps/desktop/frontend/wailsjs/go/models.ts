@@ -32,6 +32,7 @@ export namespace main {
 	    fps: number;
 	    codec: string;
 	    bitrate_kbps: number;
+	    stream_copy: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new ProbeResult(source);
@@ -45,6 +46,7 @@ export namespace main {
 	        this.fps = source["fps"];
 	        this.codec = source["codec"];
 	        this.bitrate_kbps = source["bitrate_kbps"];
+	        this.stream_copy = source["stream_copy"];
 	    }
 	}
 	export class TrimRequest {
