@@ -21,22 +21,40 @@ var (
 	binCache string // non-empty once found
 )
 
-// encoderConfig holds a video encoder name and its quality/speed arguments.
 type encoderConfig struct {
-	name string
-	args []string
+	name         string
+	args         []string
+	audioBitrate string
 }
 
-// hwEncoders are tried in order; first one that works is used.
-// All encoders must output yuv420p — browsers require 8-bit 4:2:0 H.264.
 var hwEncoders = []encoderConfig{
-	{"h264_amf", []string{"-quality", "speed", "-rc", "cqp", "-qp_i", "26", "-qp_p", "28", "-pix_fmt", "yuv420p", "-profile:v", "high", "-level", "4.1"}},
-	{"h264_nvenc", []string{"-preset", "p1", "-rc", "vbr", "-cq", "28", "-pix_fmt", "yuv420p", "-profile:v", "high", "-level", "4.1"}},
-	{"h264_qsv", []string{"-preset", "veryfast", "-global_quality", "30", "-pix_fmt", "yuv420p", "-profile:v", "high", "-level", "4.1"}},
+	{"h264_amf", []string{"-quality", "quality", "-rc", "vbr_peak", "-vbaq", "1", "-pix_fmt", "yuv420p", "-profile:v", "high", "-level", "4.1"}, "160k"},
+	{"h264_nvenc", []string{"-preset", "p5", "-tune", "hq", "-rc", "vbr", "-cq", "22", "-pix_fmt", "yuv420p", "-profile:v", "high", "-level", "4.1", "-spatial-aq", "1", "-temporal-aq", "1"}, "160k"},
+	{"h264_qsv", []string{"-preset", "slow", "-global_quality", "22", "-pix_fmt", "yuv420p", "-profile:v", "high", "-level", "4.1"}, "160k"},
 }
 
 var swEncoder = encoderConfig{
-	"libx264", []string{"-preset", "ultrafast", "-crf", "28", "-pix_fmt", "yuv420p", "-profile:v", "high", "-level", "4.1"},
+	"libx264", []string{"-preset", "medium", "-crf", "22", "-pix_fmt", "yuv420p", "-profile:v", "high", "-level", "4.1"}, "160k",
+}
+
+type bitrateParams struct {
+	maxrate string
+	bufsize string
+	bv      string
+}
+
+func resolutionBitrate(w, h int) bitrateParams {
+	pixels := w * h
+	switch {
+	case pixels <= 1280*720:
+		return bitrateParams{maxrate: "6M", bufsize: "12M", bv: "4M"}
+	case pixels <= 1920*1080:
+		return bitrateParams{maxrate: "10M", bufsize: "20M", bv: "7M"}
+	case pixels <= 2560*1440:
+		return bitrateParams{maxrate: "16M", bufsize: "32M", bv: "11M"}
+	default:
+		return bitrateParams{maxrate: "24M", bufsize: "48M", bv: "16M"}
+	}
 }
 
 var (
@@ -61,7 +79,7 @@ func selectEncoder() encoderConfig {
 	for _, enc := range hwEncoders {
 		// Include -pix_fmt yuv420p in the probe so we test the encoder with
 		// the exact pixel format we'll use during actual encoding.
-		args := []string{"-f", "lavfi", "-i", "nullsrc=s=64x64:d=0.04", "-frames:v", "1", "-c:v", enc.name, "-pix_fmt", "yuv420p", "-f", "null", "-"}
+		args := []string{"-f", "lavfi", "-i", "nullsrc=s=320x240:d=0.04", "-frames:v", "1", "-c:v", enc.name, "-pix_fmt", "yuv420p", "-f", "null", "-"}
 		cmd := exec.CommandContext(ctx, bin, args...)
 		if cmd.Run() == nil {
 			e := enc
@@ -151,7 +169,11 @@ func ffmpegBin() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "ffmpeg"), nil
+	name := "ffmpeg"
+	if runtime.GOOS == "windows" {
+		name = "ffmpeg.exe"
+	}
+	return filepath.Join(dir, name), nil
 }
 
 func ffprobeBin() (string, error) {
@@ -159,7 +181,11 @@ func ffprobeBin() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "ffprobe"), nil
+	name := "ffprobe"
+	if runtime.GOOS == "windows" {
+		name = "ffprobe.exe"
+	}
+	return filepath.Join(dir, name), nil
 }
 
 type ProbeResult struct {
@@ -242,11 +268,24 @@ func Probe(ctx context.Context, inputPath string) (*ProbeResult, error) {
 }
 
 type TrimOptions struct {
-	InputPath  string  `json:"input_path"`
-	OutputPath string  `json:"output_path"`
-	StartTime  float64 `json:"start_time"`
-	Duration   float64 `json:"duration"`
-	StreamCopy bool    `json:"stream_copy"`
+	InputPath    string  `json:"input_path"`
+	OutputPath   string  `json:"output_path"`
+	StartTime    float64 `json:"start_time"`
+	Duration     float64 `json:"duration"`
+	StreamCopy   bool    `json:"stream_copy"`
+	SourceWidth  int     `json:"source_width"`
+	SourceHeight int     `json:"source_height"`
+}
+
+func needsDownscale(w, h int) bool {
+	return w > 1920 || h > 1080
+}
+
+func scaleFilter(h int) string {
+	if h > 1080 {
+		return "scale=-2:1080,format=yuv420p"
+	}
+	return "scale=1920:-2,format=yuv420p"
 }
 
 func trimArgs(opts TrimOptions, enc encoderConfig, progress bool) []string {
@@ -265,13 +304,22 @@ func trimArgs(opts TrimOptions, enc encoderConfig, progress bool) []string {
 
 	args := []string{
 		"-ss", fmt.Sprintf("%.3f", opts.StartTime),
+		"-noaccurate_seek",
 		"-i", opts.InputPath,
 		"-t", fmt.Sprintf("%.3f", opts.Duration),
-		"-noaccurate_seek",
 		"-c:v", enc.name,
 	}
+
+	if needsDownscale(opts.SourceWidth, opts.SourceHeight) {
+		args = append(args, "-vf", scaleFilter(opts.SourceHeight))
+	}
+
 	args = append(args, enc.args...)
-	args = append(args, "-c:a", "aac", "-movflags", "+faststart")
+
+	bp := resolutionBitrate(opts.SourceWidth, opts.SourceHeight)
+	args = append(args, "-maxrate", bp.maxrate, "-bufsize", bp.bufsize, "-b:v", bp.bv)
+
+	args = append(args, "-c:a", "aac", "-b:a", enc.audioBitrate, "-movflags", "+faststart")
 	if progress {
 		args = append(args, "-progress", "pipe:1")
 	}
@@ -288,11 +336,20 @@ func Trim(ctx context.Context, opts TrimOptions) error {
 		return fmt.Errorf("output_path is required")
 	}
 	enc := selectEncoder()
-	cmd := exec.CommandContext(ctx, bin, trimArgs(opts, enc, false)...)
+	err = trimEncode(ctx, bin, opts, enc)
+	if err != nil && enc.name != swEncoder.name {
+		err = trimEncode(ctx, bin, opts, swEncoder)
+	}
+	return err
+}
+
+func trimEncode(ctx context.Context, bin string, opts TrimOptions, enc encoderConfig) error {
+	args := trimArgs(opts, enc, false)
+	cmd := exec.CommandContext(ctx, bin, args...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("ffmpeg trim failed: %w\n%s", err, stderr.String())
+		return fmt.Errorf("ffmpeg trim failed (%s): %w\ncommand: %s %s\nstderr: %s", enc.name, err, bin, strings.Join(args, " "), stderr.String())
 	}
 	return nil
 }
@@ -337,7 +394,7 @@ func cmdRun(ctx context.Context, bin string, args []string) error {
 
 type ProgressCallback func(progress float64)
 
-func TrimWithProgress(ctx context.Context, opts TrimOptions, cb ProgressCallback) error {
+func TrimWithProgress(ctx context.Context, opts TrimOptions, totalDuration float64, cb ProgressCallback) error {
 	if opts.StreamCopy {
 		return Trim(ctx, opts)
 	}
@@ -347,25 +404,35 @@ func TrimWithProgress(ctx context.Context, opts TrimOptions, cb ProgressCallback
 		return err
 	}
 
-	probeResult, err := Probe(ctx, opts.InputPath)
-	if err != nil {
-		return Trim(ctx, opts)
+	if totalDuration <= 0 {
+		probeResult, err := Probe(ctx, opts.InputPath)
+		if err != nil {
+			return Trim(ctx, opts)
+		}
+		totalDuration = probeResult.Duration
 	}
-	totalDuration := probeResult.Duration
 
 	enc := selectEncoder()
+	err = trimWithProgressEncoder(ctx, bin, opts, enc, totalDuration, cb)
+	if err != nil && enc.name != swEncoder.name {
+		err = trimWithProgressEncoder(ctx, bin, opts, swEncoder, totalDuration, cb)
+	}
+	return err
+}
+
+func trimWithProgressEncoder(ctx context.Context, bin string, opts TrimOptions, enc encoderConfig, totalDuration float64, cb ProgressCallback) error {
 	args := trimArgs(opts, enc, true)
 
 	cmd := exec.CommandContext(ctx, bin, args...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return Trim(ctx, opts)
+		return trimEncode(ctx, bin, opts, enc)
 	}
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 
 	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("ffmpeg start failed: %w", err)
+		return fmt.Errorf("ffmpeg start failed (%s): %w", enc.name, err)
 	}
 
 	timeRe := regexp.MustCompile(`out_time_us=(\d+)`)
@@ -391,7 +458,7 @@ func TrimWithProgress(ctx context.Context, opts TrimOptions, cb ProgressCallback
 	}
 
 	if err := cmd.Wait(); err != nil {
-		return fmt.Errorf("ffmpeg trim failed: %w\n%s", err, stderr.String())
+		return fmt.Errorf("ffmpeg trim failed (%s): %w\ncommand: %s %s\nstderr: %s", enc.name, err, bin, strings.Join(args, " "), stderr.String())
 	}
 	if cb != nil {
 		cb(100)
@@ -404,12 +471,17 @@ func IsAvailable() bool {
 	return err == nil
 }
 
-func CanStreamCopy(ctx context.Context, inputPath string) bool {
+func CanStreamCopy(probeResult *ProbeResult, inputPath string) bool {
+	ext := strings.ToLower(filepath.Ext(inputPath))
+	isMP4Container := ext == ".mp4" || ext == ".m4v" || ext == ".mov"
+	isH264 := probeResult.Codec == "h264" || probeResult.Codec == "avc1" || probeResult.Codec == "h264_nvenc" || probeResult.Codec == "h264_amf" || probeResult.Codec == "h264_qsv"
+	return isMP4Container && isH264 && !needsDownscale(probeResult.Width, probeResult.Height)
+}
+
+func CanStreamCopyPath(ctx context.Context, inputPath string) bool {
 	result, err := Probe(ctx, inputPath)
 	if err != nil {
 		return false
 	}
-	ext := strings.ToLower(filepath.Ext(inputPath))
-	isMP4Container := ext == ".mp4" || ext == ".m4v" || ext == ".mov"
-	return isMP4Container && (result.Codec == "h264" || result.Codec == "avc1" || result.Codec == "h264_nvenc" || result.Codec == "h264_amf" || result.Codec == "h264_qsv")
+	return CanStreamCopy(result, inputPath)
 }

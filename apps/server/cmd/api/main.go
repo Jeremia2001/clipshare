@@ -129,7 +129,7 @@ func main() {
 		ErrorHandler: middleware.ErrorHandler,
 		ReadTimeout:  5 * time.Minute,
 		WriteTimeout: 0,       // no write timeout — video streaming can take arbitrarily long
-		BodyLimit:    1 << 30, // 1GB
+		BodyLimit:    2 << 30, // 2GB
 	})
 
 	// Global middleware

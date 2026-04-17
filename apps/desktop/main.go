@@ -338,7 +338,7 @@ func (a *App) ProbeVideo(inputPath string) (*ProbeResult, error) {
 		FPS:        result.FPS,
 		Codec:      result.Codec,
 		BitrateKb:  result.Bitrate,
-		StreamCopy: ffmpeg.CanStreamCopy(a.ctx, inputPath),
+		StreamCopy: ffmpeg.CanStreamCopy(result, inputPath),
 	}, nil
 }
 
@@ -371,35 +371,88 @@ func (a *App) ExtractThumbnail(serveName string, seekTime float64) (string, erro
 }
 
 func (a *App) TrimVideo(req TrimRequest) (string, error) {
+	return a.trimVideo(req, false)
+}
+
+func (a *App) TrimVideoFast(req TrimRequest) (string, error) {
+	return a.trimVideo(req, true)
+}
+
+func (a *App) trimVideo(req TrimRequest, fastPreview bool) (string, error) {
 	id := fmt.Sprintf("trim-%d", a.mediaLen())
 	outputPath := filepath.Join(a.mediaDir, id+".mp4")
 
-	streamCopy := ffmpeg.CanStreamCopy(a.ctx, req.InputPath)
+	probeResult, probeErr := ffmpeg.Probe(a.ctx, req.InputPath)
 
-	err := ffmpeg.TrimWithProgress(a.ctx, ffmpeg.TrimOptions{
-		InputPath:  req.InputPath,
-		OutputPath: outputPath,
-		StartTime:  req.StartTime,
-		Duration:   req.Duration,
-		StreamCopy: streamCopy,
-	}, nil)
-	if err != nil && streamCopy {
-		os.Remove(outputPath)
-		err = ffmpeg.TrimWithProgress(a.ctx, ffmpeg.TrimOptions{
-			InputPath:  req.InputPath,
-			OutputPath: outputPath,
-			StartTime:  req.StartTime,
-			Duration:   req.Duration,
-			StreamCopy: false,
-		}, nil)
+	var w, h int
+	var duration float64
+	if probeResult != nil {
+		w = probeResult.Width
+		h = probeResult.Height
+		duration = probeResult.Duration
 	}
-	if err != nil {
+
+	makeOpts := func(sc bool, width, height int) ffmpeg.TrimOptions {
+		return ffmpeg.TrimOptions{
+			InputPath:    req.InputPath,
+			OutputPath:   outputPath,
+			StartTime:    req.StartTime,
+			Duration:     req.Duration,
+			StreamCopy:   sc,
+			SourceWidth:  width,
+			SourceHeight: height,
+		}
+	}
+
+	// For fast preview mode, try stream copy first (instant trim, full source bitrate).
+	if fastPreview {
+		canStreamCopy := probeErr == nil && ffmpeg.CanStreamCopy(probeResult, req.InputPath)
+		if canStreamCopy {
+			if err := ffmpeg.TrimWithProgress(a.ctx, makeOpts(true, w, h), duration, nil); err == nil {
+				serveName := id + ".mp4"
+				a.mediaSet(serveName, outputPath, true)
+				return serveName, nil
+			}
+			os.Remove(outputPath)
+		}
+		// Fallback: re-encode for preview
+		err := ffmpeg.TrimWithProgress(a.ctx, makeOpts(false, w, h), duration, nil)
+		if err == nil {
+			serveName := id + ".mp4"
+			a.mediaSet(serveName, outputPath, true)
+			return serveName, nil
+		}
+		os.Remove(outputPath)
 		return "", err
 	}
 
-	serveName := id + ".mp4"
-	a.mediaSet(serveName, outputPath, true) // deletable: trimmed output
-	return serveName, nil
+	// For final export: always re-encode to produce a web-friendly file size.
+	err := ffmpeg.TrimWithProgress(a.ctx, makeOpts(false, w, h), duration, nil)
+	if err == nil {
+		serveName := id + ".mp4"
+		a.mediaSet(serveName, outputPath, true)
+		return serveName, nil
+	}
+	os.Remove(outputPath)
+
+	// Last resort: stream copy without re-encode (preserves source bitrate,
+	// potentially large file, but better than failing entirely).
+	if probeResult != nil {
+		isH264 := probeResult.Codec == "h264" || probeResult.Codec == "avc1" || probeResult.Codec == "h264_nvenc" || probeResult.Codec == "h264_amf" || probeResult.Codec == "h264_qsv"
+		ext := strings.ToLower(filepath.Ext(req.InputPath))
+		isMP4 := ext == ".mp4" || ext == ".m4v" || ext == ".mov"
+		if isH264 && isMP4 {
+			errSc := ffmpeg.TrimWithProgress(a.ctx, makeOpts(true, 0, 0), duration, nil)
+			if errSc == nil {
+				serveName := id + ".mp4"
+				a.mediaSet(serveName, outputPath, true)
+				return serveName, nil
+			}
+			os.Remove(outputPath)
+		}
+	}
+
+	return "", err
 }
 
 func (a *App) OpenFileDialog() (string, error) {
@@ -513,25 +566,31 @@ func (a *App) UploadFile(serveName string) (*UploadResult, error) {
 	}
 	defer file.Close()
 
-	var body bytes.Buffer
-	writer := multipart.NewWriter(&body)
-	part, err := writer.CreateFormFile("file", filepath.Base(resolved))
-	if err != nil {
-		return nil, fmt.Errorf("create form file: %w", err)
-	}
-	if _, err := io.Copy(part, file); err != nil {
-		return nil, fmt.Errorf("copy file to form: %w", err)
-	}
-	writer.Close()
+	pr, pw := io.Pipe()
+	writer := multipart.NewWriter(pw)
+
+	go func() {
+		defer pw.Close()
+		part, err := writer.CreateFormFile("file", filepath.Base(resolved))
+		if err != nil {
+			pw.CloseWithError(fmt.Errorf("create form file: %w", err))
+			return
+		}
+		if _, err := io.Copy(part, file); err != nil {
+			pw.CloseWithError(fmt.Errorf("copy file to form: %w", err))
+			return
+		}
+		writer.Close()
+	}()
 
 	uploadURL := apiBase + "/api/v1/clips/upload"
-	req, err := http.NewRequest("POST", uploadURL, &body)
+	req, err := http.NewRequest("POST", uploadURL, pr)
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
-	client := &http.Client{}
+	client := &http.Client{Timeout: 10 * time.Minute}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("upload request failed: %w", err)
@@ -558,17 +617,14 @@ func (a *App) UploadFile(serveName string) (*UploadResult, error) {
 		return nil, fmt.Errorf("parse response: %w", err)
 	}
 
-	// Extract and upload thumbnail synchronously — FFmpeg reads the already-local
-	// file so this is fast and doesn't need browser involvement.
 	if ffmpeg.IsAvailable() {
 		thumbPath := filepath.Join(a.mediaDir, fmt.Sprintf("thumb-%s.jpg", uploadResp.Clip.ID))
 		if err := ffmpeg.Thumbnail(a.ctx, ffmpeg.ThumbnailOptions{
 			InputPath:  resolved,
 			OutputPath: thumbPath,
-			Time:       0, // first frame of whatever file was uploaded (already trimmed if applicable)
+			Time:       0,
 			Width:      640,
 		}); err == nil {
-			// Best-effort: ignore upload errors, thumbnail is optional
 			_ = a.uploadThumbnailDirect(thumbPath, uploadResp.Clip.ID, apiBase)
 			os.Remove(thumbPath)
 		}

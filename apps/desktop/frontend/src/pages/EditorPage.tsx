@@ -647,7 +647,9 @@ function EditorPage() {
         if (abortRef.current) { setProcessing(false); return }
         console.error('[EditorPage] Native ffmpeg trim error:', err)
         setProcessing(false)
-        setError('Trimming failed. Uploading full clip instead.')
+        const detail = err?.message || String(err)
+        const shortDetail = detail.split('\n')[0].substring(0, 120)
+        setError(`Trimming failed: ${shortDetail}. Uploading full clip instead.`)
         try {
           const result = await UploadFile(servedName)
           if (abortRef.current) return
