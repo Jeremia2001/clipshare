@@ -538,21 +538,8 @@ func (h *ClipHandler) StreamSharedClip(c *fiber.Ctx) error {
 	c.Set("Content-Type", contentType)
 	c.Set("Accept-Ranges", "bytes")
 
-	rangeHeader := c.Get("Range")
-	if rangeHeader == "" {
-		reader, _, _, err := h.clipService.StreamClipFile(c.Context(), clip)
-		if err != nil {
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-				"error": err.Error(),
-			})
-		}
-		c.Set("Content-Length", strconv.FormatInt(size, 10))
-		c.Response().SetBodyStream(reader, int(size))
-		return nil
-	}
-
-	start, end, err := parseRange(rangeHeader, size)
-	if err != nil {
+	start, end, isRange := resolveRange(c.Get("Range"), size)
+	if start < 0 {
 		return c.Status(fiber.StatusRequestedRangeNotSatisfiable).JSON(fiber.Map{
 			"error": "invalid range",
 		})
@@ -567,8 +554,12 @@ func (h *ClipHandler) StreamSharedClip(c *fiber.Ctx) error {
 
 	contentLength := end - start + 1
 	c.Set("Content-Length", strconv.FormatInt(contentLength, 10))
-	c.Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, size))
-	c.Status(fiber.StatusPartialContent)
+	if isRange {
+		c.Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, size))
+		c.Status(fiber.StatusPartialContent)
+	} else {
+		c.Status(fiber.StatusOK)
+	}
 	c.Response().SetBodyStream(&limitReadCloser{
 		Reader: io.LimitReader(reader, contentLength),
 		Closer: reader,
@@ -650,6 +641,34 @@ func enrichShares(shares []*models.Share) {
 	}
 }
 
+// maxRangeChunkBytes caps a single Range response. Chromium-based players
+// (Chrome, Edge, WebView2) stop reading once their media buffer is full, which
+// stalls an open-ended response and wedges the MinIO stream + fasthttp goroutine
+// waiting on TCP backpressure. When they later seek, reusing the connection can
+// block on that stalled response. Capping each range response to a small chunk
+// keeps every response short-lived: the player consumes it, asks for the next
+// chunk, and the server never holds a long-running stream open. Firefox keeps
+// working — it just makes a few extra 206 requests to assemble the full clip.
+const maxRangeChunkBytes = 4 * 1024 * 1024
+
+// resolveRange parses a Range header and caps the response to maxRangeChunkBytes.
+// Returns (start, end, isRange). On invalid range, returns start == -1.
+// When there is no Range header, the full file is served (start=0, end=size-1)
+// so non-browser clients (curl, download tools) still get a complete file.
+func resolveRange(rangeHeader string, size int64) (start, end int64, isRange bool) {
+	if rangeHeader == "" {
+		return 0, size - 1, false
+	}
+	s, e, err := parseRange(rangeHeader, size)
+	if err != nil {
+		return -1, -1, true
+	}
+	if e-s+1 > maxRangeChunkBytes {
+		e = s + maxRangeChunkBytes - 1
+	}
+	return s, e, true
+}
+
 func parseRange(rangeHeader string, size int64) (start, end int64, err error) {
 	if !strings.HasPrefix(rangeHeader, "bytes=") {
 		return 0, 0, fmt.Errorf("invalid range format")
@@ -722,23 +741,8 @@ func (h *ClipHandler) DownloadClip(c *fiber.Ctx) error {
 	c.Set("Content-Type", contentType)
 	c.Set("Accept-Ranges", "bytes")
 
-	rangeHeader := c.Get("Range")
-	if rangeHeader == "" {
-		// Full file — open the object without a range header.
-		reader, _, _, err := h.clipService.StreamClipFile(c.Context(), clip)
-		if err != nil {
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-				"error": err.Error(),
-			})
-		}
-		// No defer close — fasthttp calls Close() on the stream after SetBodyStream finishes.
-		c.Set("Content-Length", strconv.FormatInt(size, 10))
-		c.Response().SetBodyStream(reader, int(size))
-		return nil
-	}
-
-	start, end, err := parseRange(rangeHeader, size)
-	if err != nil {
+	start, end, isRange := resolveRange(c.Get("Range"), size)
+	if start < 0 {
 		return c.Status(fiber.StatusRequestedRangeNotSatisfiable).JSON(fiber.Map{
 			"error": "invalid range",
 		})
@@ -755,8 +759,12 @@ func (h *ClipHandler) DownloadClip(c *fiber.Ctx) error {
 
 	contentLength := end - start + 1
 	c.Set("Content-Length", strconv.FormatInt(contentLength, 10))
-	c.Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, size))
-	c.Status(fiber.StatusPartialContent)
+	if isRange {
+		c.Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, size))
+		c.Status(fiber.StatusPartialContent)
+	} else {
+		c.Status(fiber.StatusOK)
+	}
 	c.Response().SetBodyStream(&limitReadCloser{
 		Reader: io.LimitReader(reader, contentLength),
 		Closer: reader,
