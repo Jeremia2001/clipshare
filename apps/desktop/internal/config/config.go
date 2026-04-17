@@ -28,7 +28,7 @@ func Load() (*Config, error) {
 
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		return &Config{
-			APIURL:       "http://localhost:8080",
+			APIURL:       "http://127.0.0.1:8080",
 			Theme:        "dark",
 			AutoStart:    false,
 			WatchFolders: []string{},

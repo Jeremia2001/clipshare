@@ -317,12 +317,13 @@ func (a *App) InstallFFmpeg() error {
 }
 
 type ProbeResult struct {
-	Duration  float64 `json:"duration"`
-	Width     int     `json:"width"`
-	Height    int     `json:"height"`
-	FPS       float64 `json:"fps"`
-	Codec     string  `json:"codec"`
-	BitrateKb int     `json:"bitrate_kbps"`
+	Duration   float64 `json:"duration"`
+	Width      int     `json:"width"`
+	Height     int     `json:"height"`
+	FPS        float64 `json:"fps"`
+	Codec      string  `json:"codec"`
+	BitrateKb  int     `json:"bitrate_kbps"`
+	StreamCopy bool    `json:"stream_copy"`
 }
 
 func (a *App) ProbeVideo(inputPath string) (*ProbeResult, error) {
@@ -331,12 +332,13 @@ func (a *App) ProbeVideo(inputPath string) (*ProbeResult, error) {
 		return nil, err
 	}
 	return &ProbeResult{
-		Duration:  result.Duration,
-		Width:     result.Width,
-		Height:    result.Height,
-		FPS:       result.FPS,
-		Codec:     result.Codec,
-		BitrateKb: result.Bitrate,
+		Duration:   result.Duration,
+		Width:      result.Width,
+		Height:     result.Height,
+		FPS:        result.FPS,
+		Codec:      result.Codec,
+		BitrateKb:  result.Bitrate,
+		StreamCopy: ffmpeg.CanStreamCopy(a.ctx, inputPath),
 	}, nil
 }
 
@@ -372,12 +374,25 @@ func (a *App) TrimVideo(req TrimRequest) (string, error) {
 	id := fmt.Sprintf("trim-%d", a.mediaLen())
 	outputPath := filepath.Join(a.mediaDir, id+".mp4")
 
+	streamCopy := ffmpeg.CanStreamCopy(a.ctx, req.InputPath)
+
 	err := ffmpeg.TrimWithProgress(a.ctx, ffmpeg.TrimOptions{
 		InputPath:  req.InputPath,
 		OutputPath: outputPath,
 		StartTime:  req.StartTime,
 		Duration:   req.Duration,
+		StreamCopy: streamCopy,
 	}, nil)
+	if err != nil && streamCopy {
+		os.Remove(outputPath)
+		err = ffmpeg.TrimWithProgress(a.ctx, ffmpeg.TrimOptions{
+			InputPath:  req.InputPath,
+			OutputPath: outputPath,
+			StartTime:  req.StartTime,
+			Duration:   req.Duration,
+			StreamCopy: false,
+		}, nil)
+	}
 	if err != nil {
 		return "", err
 	}
@@ -489,7 +504,7 @@ func (a *App) UploadFile(serveName string) (*UploadResult, error) {
 
 	apiBase := a.config.APIURL
 	if apiBase == "" {
-		apiBase = "http://localhost:8080"
+		apiBase = "http://127.0.0.1:8080"
 	}
 
 	file, err := os.Open(resolved)

@@ -538,7 +538,6 @@ function EditorPage() {
   const [ffmpegInstallError, setFfmpegInstallError] = useState('')
   const [processing, setProcessing] = useState(false)
   const [processingProgress, setProcessingProgress] = useState('')
-  const [canStreamCopy, setCanStreamCopy] = useState(false)
   const abortRef = useRef(false)
 
   useEffect(() => {
@@ -595,7 +594,6 @@ function EditorPage() {
             setVideoHeight(probe.height)
             setTrimEnd(probe.duration)
             setTrimStart(0)
-            setCanStreamCopy(probe.stream_copy ?? false)
           }
         } catch (e) {
           console.error('[EditorPage] Probe failed:', e)
@@ -630,7 +628,7 @@ function EditorPage() {
 
     if (isTrimmed && ffmpegAvailable) {
       setProcessing(true)
-      setProcessingProgress(canStreamCopy ? 'Trimming video (stream copy)...' : 'Trimming video with native ffmpeg...')
+      setProcessingProgress('Trimming video...')
       try {
         const trimmedServeName = await TrimVideo({
           input_path: selectedFilePath,
@@ -721,7 +719,6 @@ function EditorPage() {
     setVideoHeight(0)
     setProcessing(false)
     setProcessingProgress('')
-    setCanStreamCopy(false)
   }
 
   if (!user) return null
@@ -885,7 +882,7 @@ function EditorPage() {
                   <div>Duration: {videoDuration > 0 ? `${Math.round(videoDuration)}s` : 'loading...'}</div>
                   <div>Resolution: {videoWidth && videoHeight ? `${videoWidth}x${videoHeight}` : 'loading...'}</div>
                   <div>File: {fileName}</div>
-                  <div>Engine: {ffmpegAvailable ? (canStreamCopy ? 'Native ffmpeg (stream copy)' : 'Native ffmpeg') : 'None'}</div>
+                  <div>Engine: {ffmpegAvailable ? 'Native ffmpeg' : 'None'}</div>
                 </div>
               )}
             </div>

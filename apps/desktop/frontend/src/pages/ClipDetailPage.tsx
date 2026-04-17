@@ -5,7 +5,7 @@ import {
   ArrowLeft, Eye, Trash2, Share2, Globe, Lock, Clock,
   MessageSquare, HardDrive, Loader2, Copy, Check, Film
 } from 'lucide-react'
-import { Clip, clipApi, shareApi, ShareResponse } from '../services/api'
+import { Clip, clipApi, shareApi, ShareResponse, normalizeApiUrl } from '../services/api'
 import { ProxyVideoURL } from '../../wailsjs/go/main/App'
 
 function ClipDetailPage() {
@@ -38,7 +38,7 @@ function ClipDetailPage() {
       // Use the API download endpoint for desktop playback — presigned storage
       // URLs (e.g. http://minio:9000/...) are internal and unreachable from the
       // host process. The download endpoint is always accessible via the API URL.
-      const apiUrl = localStorage.getItem('api_url') || 'http://localhost:8080'
+      const apiUrl = normalizeApiUrl(localStorage.getItem('api_url'))
       const downloadUrl = `${apiUrl}/api/v1/clips/${id}/download`
       const token = localStorage.getItem('access_token') || ''
       try {
