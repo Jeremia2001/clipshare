@@ -24,6 +24,7 @@ function ClipDetailPage() {
   const [allowComments, setAllowComments] = useState(true)
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
 
   const [shares, setShares] = useState<ShareResponse[]>([])
   const [copiedCode, setCopiedCode] = useState<string | null>(null)
@@ -104,7 +105,9 @@ function ClipDetailPage() {
     try {
       await clipApi.delete(id)
       navigate('/')
-    } catch {}
+    } catch {
+      setConfirmingDelete(false)
+    }
     setDeleting(false)
   }
 
@@ -302,10 +305,30 @@ function ClipDetailPage() {
           </div>
 
           <div className="flex items-center space-x-3">
-            <button onClick={handleDelete} disabled={deleting} className="btn-ghost inline-flex items-center space-x-2 text-earth-500 hover:text-earth-400">
-              {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-              <span>Delete</span>
-            </button>
+            {confirmingDelete ? (
+              <>
+                <span className="text-sm text-sand-500">Delete this clip permanently?</span>
+                <button
+                  onClick={handleDelete}
+                  disabled={deleting}
+                  className="btn-danger inline-flex items-center space-x-2"
+                >
+                  {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                  <span>{deleting ? 'Deleting...' : 'Confirm Delete'}</span>
+                </button>
+                <button onClick={() => setConfirmingDelete(false)} className="btn-ghost text-sm">
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={() => setConfirmingDelete(true)}
+                className="btn-ghost inline-flex items-center space-x-2 text-earth-500 hover:text-earth-400"
+              >
+                <Trash2 className="h-4 w-4" />
+                <span>Delete</span>
+              </button>
+            )}
           </div>
         </div>
 

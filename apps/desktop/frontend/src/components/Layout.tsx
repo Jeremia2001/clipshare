@@ -37,13 +37,13 @@ function Layout() {
             <Link
               key={path}
               to={path}
-              className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${
+              className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-200 ${
                 isActive(path)
-                  ? 'bg-forest-800/70 text-forest-200'
-                  : 'text-sand-500 hover:text-sand-300 hover:bg-forest-900/50'
+                  ? 'bg-forest-700/50 text-sand-100 font-semibold'
+                  : 'font-medium text-sand-500 hover:text-sand-300 hover:bg-forest-900/50'
               }`}
             >
-              <Icon className="h-[18px] w-[18px]" />
+              <Icon className={`h-[18px] w-[18px] shrink-0 ${isActive(path) ? 'text-forest-400' : ''}`} />
               <span>{label}</span>
             </Link>
           ))}
