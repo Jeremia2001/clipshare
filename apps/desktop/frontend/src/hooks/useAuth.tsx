@@ -109,11 +109,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       try {
         const isDev = await IsDevMode()
         setDevMode(isDev)
+        const b = await refreshBootstrap()
         if (isDev) {
+          // Purge any token left over from a previous real login so the
+          // server's dev bypass (RequireAuth) actually triggers — otherwise
+          // AuthMiddleware parses the stale JWT and pins requests to a
+          // now-deleted user, causing FK violations on insert.
+          localStorage.removeItem('access_token')
           setUser(devUser)
           return
         }
-        const b = await refreshBootstrap()
         if (b?.hasToken) {
           await attachStoredToken()
           await fetchUser()

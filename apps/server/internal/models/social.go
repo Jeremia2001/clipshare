@@ -7,14 +7,15 @@ import (
 )
 
 type Comment struct {
-	ID        uuid.UUID  `db:"id" json:"id"`
-	ClipID    uuid.UUID  `db:"clip_id" json:"clip_id"`
-	UserID    uuid.UUID  `db:"user_id" json:"user_id"`
-	ParentID  *uuid.UUID `db:"parent_id" json:"parent_id,omitempty"`
-	Content   string     `db:"content" json:"content"`
-	IsEdited  bool       `db:"is_edited" json:"is_edited"`
-	EditedAt  *time.Time `db:"edited_at" json:"edited_at,omitempty"`
-	CreatedAt time.Time  `db:"created_at" json:"created_at"`
+	ID          uuid.UUID  `db:"id" json:"id"`
+	ClipID      uuid.UUID  `db:"clip_id" json:"clip_id"`
+	UserID      *uuid.UUID `db:"user_id" json:"user_id,omitempty"`
+	ParentID    *uuid.UUID `db:"parent_id" json:"parent_id,omitempty"`
+	DisplayName *string    `db:"display_name" json:"display_name,omitempty"`
+	Content     string     `db:"content" json:"content"`
+	IsEdited    bool       `db:"is_edited" json:"is_edited"`
+	EditedAt    *time.Time `db:"edited_at" json:"edited_at,omitempty"`
+	CreatedAt   time.Time  `db:"created_at" json:"created_at"`
 }
 
 type ClipReaction struct {

@@ -2,9 +2,9 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, Eye, Trash2, Share2, Globe, Lock, Clock,
-  MessageSquare, HardDrive, Loader2, Copy, Check, Film
+  MessageSquare, HardDrive, Loader2, Copy, Check, Film, User, RefreshCw
 } from 'lucide-react'
-import { Clip, clipApi, shareApi, ShareResponse, normalizeApiUrl } from '../services/api'
+import { Clip, Comment, clipApi, commentApi, shareApi, ShareResponse, normalizeApiUrl } from '../services/api'
 import { ProxyVideoURL } from '../../wailsjs/go/main/App'
 
 function ClipDetailPage() {
@@ -27,6 +27,21 @@ function ClipDetailPage() {
 
   const [shares, setShares] = useState<ShareResponse[]>([])
   const [copiedCode, setCopiedCode] = useState<string | null>(null)
+
+  const [comments, setComments] = useState<Comment[]>([])
+  const [commentsLoading, setCommentsLoading] = useState(true)
+
+  const loadComments = async (clipId: string) => {
+    setCommentsLoading(true)
+    try {
+      const { data } = await commentApi.listByClip(clipId)
+      setComments(data.comments || [])
+    } catch {
+      setComments([])
+    } finally {
+      setCommentsLoading(false)
+    }
+  }
 
   useEffect(() => {
     if (!id) return
@@ -61,6 +76,8 @@ function ClipDetailPage() {
       }))
       setShares(mapped)
     }).catch(() => {})
+
+    loadComments(id)
   }, [id])
 
   const handleSave = async () => {
@@ -221,6 +238,65 @@ function ClipDetailPage() {
                     <div>Size: {(clip.file_size_bytes / 1024 / 1024).toFixed(1)} MB</div>
                   </div>
                 </>
+              )}
+            </div>
+          </div>
+
+          <div className="card">
+            <div className="section-header flex items-center justify-between">
+              <div className="flex items-center space-x-2.5">
+                <MessageSquare className="h-4 w-4 text-sand-500" />
+                <h2 className="text-base font-semibold text-sand-200">Comments</h2>
+                {!commentsLoading && (
+                  <span className="text-xs text-sand-600">({comments.length})</span>
+                )}
+              </div>
+              <button
+                onClick={() => id && loadComments(id)}
+                disabled={commentsLoading}
+                className="btn-ghost text-sm inline-flex items-center space-x-1.5"
+                title="Refresh"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${commentsLoading ? 'animate-spin' : ''}`} />
+                <span>Refresh</span>
+              </button>
+            </div>
+            <div className="card-body">
+              {!clip.allow_comments ? (
+                <p className="text-sm text-sand-600 italic">
+                  Comments are disabled for this clip.
+                </p>
+              ) : commentsLoading && comments.length === 0 ? (
+                <div className="flex items-center justify-center py-6">
+                  <Loader2 className="h-5 w-5 text-forest-500 animate-spin" />
+                </div>
+              ) : comments.length === 0 ? (
+                <p className="text-sm text-sand-600 italic">
+                  No comments yet. Share this clip to start the conversation.
+                </p>
+              ) : (
+                <ul className="space-y-3">
+                  {comments.map(comment => (
+                    <li key={comment.id} className="flex items-start space-x-3">
+                      <div className="mt-0.5 h-8 w-8 rounded-full bg-forest-800 flex items-center justify-center shrink-0">
+                        <User className="h-4 w-4 text-sand-400" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-baseline space-x-2">
+                          <span className="text-sm font-semibold text-sand-200 truncate">
+                            {comment.display_name || 'Guest'}
+                          </span>
+                          <span className="text-xs text-sand-600">
+                            {new Date(comment.created_at).toLocaleString()}
+                          </span>
+                        </div>
+                        <p className="text-sm text-sand-300 whitespace-pre-wrap break-words mt-0.5">
+                          {comment.content}
+                        </p>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
               )}
             </div>
           </div>

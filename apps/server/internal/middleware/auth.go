@@ -60,15 +60,22 @@ func extractBearer(c *fiber.Ctx) string {
 	return c.Query("token")
 }
 
+// devUserID matches the UUID seeded by cmd/api/main.go:seedDevUser.
+var devUserID = uuid.MustParse("00000000-0000-0000-0000-000000000001")
+
+// forceDevUser overwrites whatever AuthMiddleware parsed from an incoming
+// token. Dev mode means "every request is the dev user" — honoring a stale
+// token from a previous real login would pin requests to a now-deleted user
+// and cause FK violations on insert.
+func forceDevUser(c *fiber.Ctx) {
+	c.Locals("user_id", devUserID)
+	c.Locals("username", "dev")
+	c.Locals("is_admin", true)
+}
+
 func RequireAuth(c *fiber.Ctx) error {
-	// Dev bypass — set a mock admin user so the rest of the stack works.
 	if isDev() {
-		if c.Locals("user_id") == nil {
-			devUUID, _ := uuid.Parse("00000000-0000-0000-0000-000000000001")
-			c.Locals("user_id", devUUID)
-			c.Locals("username", "dev")
-			c.Locals("is_admin", true)
-		}
+		forceDevUser(c)
 		return c.Next()
 	}
 
@@ -82,12 +89,7 @@ func RequireAuth(c *fiber.Ctx) error {
 
 func RequireAdmin(c *fiber.Ctx) error {
 	if isDev() {
-		if c.Locals("user_id") == nil {
-			devUUID, _ := uuid.Parse("00000000-0000-0000-0000-000000000001")
-			c.Locals("user_id", devUUID)
-			c.Locals("username", "dev")
-			c.Locals("is_admin", true)
-		}
+		forceDevUser(c)
 		return c.Next()
 	}
 	if c.Locals("user_id") == nil {

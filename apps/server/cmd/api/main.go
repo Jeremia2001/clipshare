@@ -81,6 +81,7 @@ func main() {
 	instanceRepo := repository.NewInstanceRepository(db)
 	clipRepo := repository.NewClipRepository(db)
 	shareRepo := repository.NewShareRepository(db)
+	commentRepo := repository.NewCommentRepository(db)
 
 	jwtManager := auth.NewJWTManager(
 		cfg.Auth.JWTSecret,
@@ -95,6 +96,7 @@ func main() {
 		clipRepo,
 		shareRepo,
 		userRepo,
+		commentRepo,
 		rustfsClient,
 		cfg.Server.PublicURL,
 	)

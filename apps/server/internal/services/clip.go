@@ -19,26 +19,29 @@ import (
 )
 
 type ClipService struct {
-	clipRepo  repository.ClipRepository
-	shareRepo repository.ShareRepository
-	userRepo  repository.UserRepository
-	rustfs    *storage.RustFSClient
-	publicURL string
+	clipRepo    repository.ClipRepository
+	shareRepo   repository.ShareRepository
+	userRepo    repository.UserRepository
+	commentRepo repository.CommentRepository
+	rustfs      *storage.RustFSClient
+	publicURL   string
 }
 
 func NewClipService(
 	clipRepo repository.ClipRepository,
 	shareRepo repository.ShareRepository,
 	userRepo repository.UserRepository,
+	commentRepo repository.CommentRepository,
 	rustfs *storage.RustFSClient,
 	publicURL string,
 ) *ClipService {
 	return &ClipService{
-		clipRepo:  clipRepo,
-		shareRepo: shareRepo,
-		userRepo:  userRepo,
-		rustfs:    rustfs,
-		publicURL: publicURL,
+		clipRepo:    clipRepo,
+		shareRepo:   shareRepo,
+		userRepo:    userRepo,
+		commentRepo: commentRepo,
+		rustfs:      rustfs,
+		publicURL:   publicURL,
 	}
 }
 
@@ -484,6 +487,68 @@ func (s *ClipService) GetSharedClip(ctx context.Context, code string, password *
 	_ = s.shareRepo.IncrementViewCount(ctx, share.ID)
 
 	return clip, nil
+}
+
+const (
+	maxCommentNameLength    = 64
+	maxCommentContentLength = 2000
+)
+
+func (s *ClipService) ListClipCommentsForOwner(ctx context.Context, clipID, userID uuid.UUID) ([]*models.Comment, error) {
+	clip, err := s.clipRepo.GetByID(ctx, clipID)
+	if err != nil {
+		return nil, err
+	}
+	if clip == nil {
+		return nil, fmt.Errorf("clip not found")
+	}
+	if clip.UserID != userID {
+		return nil, fmt.Errorf("not authorized")
+	}
+	return s.commentRepo.ListByClipID(ctx, clipID)
+}
+
+func (s *ClipService) ListShareComments(ctx context.Context, code string, password *string) ([]*models.Comment, error) {
+	_, clip, err := s.ValidateShareAccess(ctx, code, password)
+	if err != nil {
+		return nil, err
+	}
+	if !clip.AllowComments {
+		return []*models.Comment{}, nil
+	}
+	return s.commentRepo.ListByClipID(ctx, clip.ID)
+}
+
+func (s *ClipService) CreateGuestComment(ctx context.Context, code string, password *string, displayName, content string) (*models.Comment, error) {
+	_, clip, err := s.ValidateShareAccess(ctx, code, password)
+	if err != nil {
+		return nil, err
+	}
+	if !clip.AllowComments {
+		return nil, fmt.Errorf("comments are disabled for this clip")
+	}
+
+	name := strings.TrimSpace(displayName)
+	body := strings.TrimSpace(content)
+	if name == "" {
+		return nil, fmt.Errorf("name is required")
+	}
+	if body == "" {
+		return nil, fmt.Errorf("comment is required")
+	}
+	if len([]rune(name)) > maxCommentNameLength {
+		name = string([]rune(name)[:maxCommentNameLength])
+	}
+	if len([]rune(body)) > maxCommentContentLength {
+		body = string([]rune(body)[:maxCommentContentLength])
+	}
+
+	comment := &models.Comment{
+		ClipID:      clip.ID,
+		DisplayName: &name,
+		Content:     body,
+	}
+	return s.commentRepo.Create(ctx, comment)
 }
 
 func generateShareCode() string {

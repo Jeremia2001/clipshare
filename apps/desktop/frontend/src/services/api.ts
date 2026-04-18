@@ -103,6 +103,18 @@ export interface ShareResponse {
   share: Share
 }
 
+export interface Comment {
+  id: string
+  clip_id: string
+  user_id?: string
+  parent_id?: string
+  display_name?: string
+  content: string
+  is_edited: boolean
+  edited_at?: string
+  created_at: string
+}
+
 export const clipApi = {
   uploadFile: (file: File): Promise<{ data: { clip: Clip; object_key: string } }> => {
     const apiUrl = normalizeApiUrl(localStorage.getItem('api_url'))
@@ -203,4 +215,9 @@ export const shareApi = {
 
   getShared: (code: string, password?: string) =>
     api.get<{ clip: Clip; view_url: string }>(`/s/${code}`, { params: password ? { password } : {} }),
+}
+
+export const commentApi = {
+  listByClip: (clipId: string) =>
+    api.get<{ comments: Comment[] }>(`/clips/${clipId}/comments`),
 }

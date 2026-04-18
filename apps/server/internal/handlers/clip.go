@@ -45,6 +45,7 @@ func (h *ClipHandler) RegisterRoutes(r fiber.Router) {
 	clips.Post("/:id/thumbnail", middleware.RequireAuth, h.UploadThumbnail)
 	clips.Get("/:id/thumbnail", middleware.RequireAuth, h.GetThumbnail)
 	clips.Get("/:id/download", middleware.RequireAuth, h.DownloadClip)
+	clips.Get("/:id/comments", middleware.RequireAuth, h.ListClipComments)
 
 	shares := clips.Group("/:clipId/shares")
 	shares.Post("/", middleware.RequireAuth, h.CreateShare)
@@ -53,6 +54,8 @@ func (h *ClipHandler) RegisterRoutes(r fiber.Router) {
 
 	r.Get("/s/:code", h.GetSharedClip)
 	r.Get("/s/:code/video", h.StreamSharedClip)
+	r.Get("/s/:code/comments", h.ListSharedComments)
+	r.Post("/s/:code/comments", h.CreateSharedComment)
 }
 
 func (h *ClipHandler) getUserID(c *fiber.Ctx) (uuid.UUID, error) {
@@ -474,6 +477,15 @@ func (h *ClipHandler) GetSharedClip(c *fiber.Ctx) error {
 
 	contentType := services.ClipContentType(clip.OriginalFilename)
 
+	passwordJS := "null"
+	if password != nil {
+		passwordJS = fmt.Sprintf("%q", *password)
+	}
+	commentsEnabled := "false"
+	if clip.AllowComments {
+		commentsEnabled = "true"
+	}
+
 	html := fmt.Sprintf(`<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -487,14 +499,11 @@ func (h *ClipHandler) GetSharedClip(c *fiber.Ctx) error {
       color: #e0e0e0;
       font-family: system-ui, sans-serif;
       min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
       padding: 24px;
     }
-    .container { width: 100%%; max-width: 960px; }
+    .container { width: 100%%; max-width: 960px; margin: 0 auto; }
     h1 { font-size: 1.25rem; font-weight: 600; margin-bottom: 16px; }
+    h2 { font-size: 1rem; font-weight: 600; margin: 24px 0 12px; color: #c0c0c0; }
     video {
       width: 100%%;
       border-radius: 8px;
@@ -502,6 +511,52 @@ func (h *ClipHandler) GetSharedClip(c *fiber.Ctx) error {
       display: block;
     }
     .meta { margin-top: 12px; font-size: 0.8rem; color: #777; }
+    .comments { margin-top: 24px; }
+    .comment {
+      background: #1a1a1a;
+      border-radius: 6px;
+      padding: 10px 12px;
+      margin-bottom: 8px;
+    }
+    .comment-head {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.8rem;
+      margin-bottom: 4px;
+    }
+    .comment-name { font-weight: 600; color: #e0e0e0; }
+    .comment-time { color: #777; }
+    .comment-body { color: #d0d0d0; white-space: pre-wrap; word-break: break-word; }
+    .empty { color: #777; font-size: 0.9rem; font-style: italic; }
+    form.new-comment {
+      background: #1a1a1a;
+      border-radius: 6px;
+      padding: 12px;
+      margin-top: 12px;
+    }
+    form.new-comment input, form.new-comment textarea {
+      width: 100%%;
+      background: #0f0f0f;
+      color: #e0e0e0;
+      border: 1px solid #333;
+      border-radius: 4px;
+      padding: 8px 10px;
+      font: inherit;
+      margin-bottom: 8px;
+    }
+    form.new-comment textarea { min-height: 72px; resize: vertical; }
+    form.new-comment button {
+      background: #3a7a3a;
+      color: #fff;
+      border: 0;
+      border-radius: 4px;
+      padding: 8px 14px;
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    form.new-comment button:disabled { opacity: 0.6; cursor: not-allowed; }
+    .error { color: #e07676; font-size: 0.85rem; margin-top: 4px; }
   </style>
 </head>
 <body>
@@ -512,9 +567,119 @@ func (h *ClipHandler) GetSharedClip(c *fiber.Ctx) error {
       Your browser does not support the video tag.
     </video>
     <p class="meta">Shared via clipshare</p>
+    <div id="comments-section" class="comments" style="display:none">
+      <h2>Comments</h2>
+      <div id="comments-list"><p class="empty">Loading…</p></div>
+      <form id="comment-form" class="new-comment">
+        <input id="comment-name" type="text" maxlength="64" placeholder="Your name" required>
+        <textarea id="comment-content" maxlength="2000" placeholder="Leave a comment…" required></textarea>
+        <button type="submit">Post comment</button>
+        <div id="comment-error" class="error" style="display:none"></div>
+      </form>
+    </div>
   </div>
+  <script>
+    (function () {
+      var commentsEnabled = %s;
+      if (!commentsEnabled) return;
+      var code = %q;
+      var password = %s;
+      var section = document.getElementById('comments-section');
+      var list = document.getElementById('comments-list');
+      var form = document.getElementById('comment-form');
+      var nameInput = document.getElementById('comment-name');
+      var contentInput = document.getElementById('comment-content');
+      var errorBox = document.getElementById('comment-error');
+      var submitBtn = form.querySelector('button');
+      section.style.display = '';
+
+      var storedName = null;
+      try { storedName = localStorage.getItem('clipshare:comment-name'); } catch (e) {}
+      if (storedName) nameInput.value = storedName;
+
+      function escapeHTML(s) {
+        return String(s).replace(/[&<>"']/g, function (c) {
+          return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+        });
+      }
+
+      function formatDate(iso) {
+        try { return new Date(iso).toLocaleString(); } catch (e) { return ''; }
+      }
+
+      function renderComments(items) {
+        if (!items.length) {
+          list.innerHTML = '<p class="empty">No comments yet — be the first.</p>';
+          return;
+        }
+        list.innerHTML = items.map(function (c) {
+          var name = c.display_name || 'Guest';
+          return '<div class="comment">' +
+            '<div class="comment-head">' +
+              '<span class="comment-name">' + escapeHTML(name) + '</span>' +
+              '<span class="comment-time">' + escapeHTML(formatDate(c.created_at)) + '</span>' +
+            '</div>' +
+            '<div class="comment-body">' + escapeHTML(c.content) + '</div>' +
+          '</div>';
+        }).join('');
+      }
+
+      function qs() {
+        return password ? ('?password=' + encodeURIComponent(password)) : '';
+      }
+
+      function loadComments() {
+        fetch('/api/v1/s/' + encodeURIComponent(code) + '/comments' + qs())
+          .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
+          .then(function (res) {
+            if (!res.ok) {
+              list.innerHTML = '<p class="empty">Could not load comments.</p>';
+              return;
+            }
+            renderComments(res.body.comments || []);
+          })
+          .catch(function () {
+            list.innerHTML = '<p class="empty">Could not load comments.</p>';
+          });
+      }
+
+      form.addEventListener('submit', function (e) {
+        e.preventDefault();
+        errorBox.style.display = 'none';
+        var name = nameInput.value.trim();
+        var content = contentInput.value.trim();
+        if (!name || !content) return;
+
+        submitBtn.disabled = true;
+        try { localStorage.setItem('clipshare:comment-name', name); } catch (e2) {}
+
+        fetch('/api/v1/s/' + encodeURIComponent(code) + '/comments', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: name, content: content, password: password })
+        })
+          .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
+          .then(function (res) {
+            if (!res.ok) {
+              errorBox.textContent = (res.body && res.body.error) || 'Could not post comment.';
+              errorBox.style.display = '';
+              return;
+            }
+            contentInput.value = '';
+            loadComments();
+          })
+          .catch(function () {
+            errorBox.textContent = 'Network error. Please try again.';
+            errorBox.style.display = '';
+          })
+          .finally(function () { submitBtn.disabled = false; });
+      });
+
+      loadComments();
+    })();
+  </script>
 </body>
-</html>`, title, title, videoURL, contentType)
+</html>`, title, title, videoURL, contentType, commentsEnabled, code, passwordJS)
 
 	c.Set("Content-Type", "text/html; charset=utf-8")
 	return c.SendString(html)
@@ -575,6 +740,61 @@ func (h *ClipHandler) StreamSharedClip(c *fiber.Ctx) error {
 		Closer: reader,
 	}, int(contentLength))
 	return nil
+}
+
+func (h *ClipHandler) ListClipComments(c *fiber.Ctx) error {
+	userID, err := h.getUserID(c)
+	if err != nil {
+		return err
+	}
+	clipIDStr := c.Params("id")
+	clipID, err := uuid.Parse(clipIDStr)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid clip ID"})
+	}
+	comments, err := h.clipService.ListClipCommentsForOwner(c.Context(), clipID, userID)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"comments": comments})
+}
+
+func (h *ClipHandler) ListSharedComments(c *fiber.Ctx) error {
+	code := c.Params("code")
+	if code == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Share code is required"})
+	}
+	var password *string
+	if pw := c.Query("password"); pw != "" {
+		password = &pw
+	}
+	comments, err := h.clipService.ListShareComments(c.Context(), code, password)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"comments": comments})
+}
+
+func (h *ClipHandler) CreateSharedComment(c *fiber.Ctx) error {
+	code := c.Params("code")
+	if code == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Share code is required"})
+	}
+
+	var req struct {
+		Name     string  `json:"name"`
+		Content  string  `json:"content"`
+		Password *string `json:"password,omitempty"`
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request body"})
+	}
+
+	comment, err := h.clipService.CreateGuestComment(c.Context(), code, req.Password, req.Name, req.Content)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"comment": comment})
 }
 
 func (h *ClipHandler) UploadThumbnail(c *fiber.Ctx) error {
