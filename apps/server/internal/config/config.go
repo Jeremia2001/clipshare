@@ -12,7 +12,6 @@ type Config struct {
 	Database DatabaseConfig
 	RustFS   RustFSConfig
 	Auth     AuthConfig
-	Email    EmailConfig
 }
 
 type ServerConfig struct {
@@ -51,18 +50,6 @@ type AuthConfig struct {
 	JWTSecret          string
 	AccessTokenExpiry  time.Duration
 	RefreshTokenExpiry time.Duration
-	MagicLinkExpiry    time.Duration
-	RequireEmailVerify bool
-}
-
-type EmailConfig struct {
-	Host     string
-	Port     int
-	Username string
-	Password string
-	From     string
-	FromName string
-	UseTLS   bool
 }
 
 func Load() (*Config, error) {
@@ -96,19 +83,8 @@ func Load() (*Config, error) {
 		},
 		Auth: AuthConfig{
 			JWTSecret:          getEnv("JWT_SECRET", "your-super-secret-key-change-this-in-production"),
-			AccessTokenExpiry:  getEnvAsDuration("ACCESS_TOKEN_EXPIRY", 1*time.Hour),
+			AccessTokenExpiry:  getEnvAsDuration("ACCESS_TOKEN_EXPIRY", 24*time.Hour),
 			RefreshTokenExpiry: getEnvAsDuration("REFRESH_TOKEN_EXPIRY", 7*24*time.Hour),
-			MagicLinkExpiry:    getEnvAsDuration("MAGIC_LINK_EXPIRY", 15*time.Minute),
-			RequireEmailVerify: getEnvAsBool("REQUIRE_EMAIL_VERIFY", true),
-		},
-		Email: EmailConfig{
-			Host:     getEnv("SMTP_HOST", "localhost"),
-			Port:     getEnvAsInt("SMTP_PORT", 587),
-			Username: getEnv("SMTP_USER", ""),
-			Password: getEnv("SMTP_PASS", ""),
-			From:     getEnv("EMAIL_FROM", "noreply@clipshare.io"),
-			FromName: getEnv("EMAIL_FROM_NAME", "ClipShare"),
-			UseTLS:   getEnvAsBool("EMAIL_USE_TLS", true),
 		},
 	}
 

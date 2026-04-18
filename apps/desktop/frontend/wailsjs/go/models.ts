@@ -2,6 +2,7 @@ export namespace config {
 	
 	export class Config {
 	    api_url: string;
+	    account_username?: string;
 	    theme: string;
 	    auto_start: boolean;
 	    watch_folders: string[];
@@ -14,6 +15,7 @@ export namespace config {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.api_url = source["api_url"];
+	        this.account_username = source["account_username"];
 	        this.theme = source["theme"];
 	        this.auto_start = source["auto_start"];
 	        this.watch_folders = source["watch_folders"];
@@ -25,6 +27,26 @@ export namespace config {
 
 export namespace main {
 	
+	export class AuthStatus {
+	    server_url: string;
+	    account_username?: string;
+	    has_token: boolean;
+	    needs_setup: boolean;
+	    reachable: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new AuthStatus(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.server_url = source["server_url"];
+	        this.account_username = source["account_username"];
+	        this.has_token = source["has_token"];
+	        this.needs_setup = source["needs_setup"];
+	        this.reachable = source["reachable"];
+	    }
+	}
 	export class ProbeResult {
 	    duration: number;
 	    width: number;

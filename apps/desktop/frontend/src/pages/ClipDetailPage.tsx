@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { useAuth } from '../hooks/useAuth'
 import {
   ArrowLeft, Eye, Trash2, Share2, Globe, Lock, Clock,
   MessageSquare, HardDrive, Loader2, Copy, Check, Film
@@ -11,7 +10,6 @@ import { ProxyVideoURL } from '../../wailsjs/go/main/App'
 function ClipDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const { } = useAuth()
 
   const [clip, setClip] = useState<Clip | null>(null)
   const [viewUrl, setViewUrl] = useState<string | null>(null)

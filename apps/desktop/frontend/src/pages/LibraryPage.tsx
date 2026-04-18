@@ -120,8 +120,6 @@ function LibraryPage() {
 
   if (!user) return null
 
-  const storageUsedMB = ((user.storage_used_bytes || 0) / 1024 / 1024).toFixed(0)
-  const storageQuotaGB = ((user.storage_quota_bytes || 0) / 1024 / 1024 / 1024).toFixed(0)
   const totalPages = Math.ceil(total / 20)
 
   return (
@@ -130,7 +128,7 @@ function LibraryPage() {
         <div>
           <h1 className="text-2xl font-bold text-sand-100">My Clips</h1>
           <p className="text-sm text-sand-500 mt-1">
-            {storageUsedMB} MB used of {storageQuotaGB} GB &middot; {total} clip{total !== 1 ? 's' : ''}
+            {total} clip{total !== 1 ? 's' : ''}
           </p>
         </div>
         <button onClick={() => navigate('/editor')} className="btn-primary inline-flex items-center space-x-2">

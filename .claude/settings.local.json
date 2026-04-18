@@ -16,7 +16,9 @@
       "Bash(curl -s -o /tmp/full.bin -w \"status=%{http_code} size=%{size_download}\\\\n\" \"http://localhost:8080/api/v1/s/698fbed7/video\")",
       "Read(//c/code/clipshare/**)",
       "Bash(curl -s -v -o /dev/null -H \"Range: bytes=8388608-12582911\" \"http://localhost:8080/api/v1/s/698fbed7/video\")",
-      "Bash(docker exec *)"
+      "Bash(docker exec *)",
+      "Bash(go list *)",
+      "Bash(docker compose *)"
     ]
   }
 }

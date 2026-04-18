@@ -1,12 +1,14 @@
-version: '3.8'
+# Compose reads a sibling .env file automatically. Copy .env.example to .env
+# and edit it before running `docker compose up`. For a dev-only stack the
+# defaults below work without any .env at all.
 
 services:
   postgres:
     image: postgres:15-alpine
     environment:
-      POSTGRES_USER: clipshare
-      POSTGRES_PASSWORD: clipshare123
-      POSTGRES_DB: clipshare
+      POSTGRES_USER: ${DB_USER:-clipshare}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-clipshare123}
+      POSTGRES_DB: ${DB_NAME:-clipshare}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
@@ -14,7 +16,7 @@ services:
     networks:
       - clipshare
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U clipshare"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-clipshare}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -22,8 +24,8 @@ services:
   rustfs:
     image: rustfs/rustfs:latest
     environment:
-      RUSTFS_ROOT_USER: clipshare
-      RUSTFS_ROOT_PASSWORD: clipshare123
+      RUSTFS_ROOT_USER: ${RUSTFS_ACCESS_KEY:-clipshare}
+      RUSTFS_ROOT_PASSWORD: ${RUSTFS_SECRET_KEY:-clipshare123}
     volumes:
       - rustfs_data:/data
       - rustfs_logs:/logs
@@ -37,7 +39,6 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
-    # Create data and logs directories with proper permissions
     user: "10001:10001"
 
   api:
@@ -45,26 +46,27 @@ services:
       context: ../apps/server
       dockerfile: Dockerfile
     environment:
-      ENV: development
+      ENV: ${ENV:-development}
       SERVER_HOST: 0.0.0.0
       SERVER_PORT: 8080
+      SERVER_PUBLIC_URL: ${SERVER_PUBLIC_URL:-http://localhost:8080}
+
       DB_HOST: postgres
       DB_PORT: 5432
-      DB_USER: clipshare
-      DB_PASSWORD: clipshare123
-      DB_NAME: clipshare
+      DB_USER: ${DB_USER:-clipshare}
+      DB_PASSWORD: ${DB_PASSWORD:-clipshare123}
+      DB_NAME: ${DB_NAME:-clipshare}
       DB_SSLMODE: disable
+
       RUSTFS_ENDPOINT: rustfs:9000
-      RUSTFS_PUBLIC_ENDPOINT: ""
-      RUSTFS_ACCESS_KEY: clipshare
-      RUSTFS_SECRET_KEY: clipshare123
-      RUSTFS_USE_SSL: "false"
-      JWT_SECRET: change-this-to-a-random-secret-in-production
-      SMTP_HOST: ${SMTP_HOST:-}
-      SMTP_PORT: ${SMTP_PORT:-587}
-      SMTP_USER: ${SMTP_USER:-}
-      SMTP_PASS: ${SMTP_PASS:-}
-      FRONTEND_URL: http://localhost:3000
+      RUSTFS_PUBLIC_ENDPOINT: ${RUSTFS_PUBLIC_ENDPOINT:-}
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-clipshare}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:-clipshare123}
+      RUSTFS_USE_SSL: ${RUSTFS_USE_SSL:-false}
+
+      JWT_SECRET: ${JWT_SECRET:-your-super-secret-key-change-this-in-production}
+      ACCESS_TOKEN_EXPIRY: ${ACCESS_TOKEN_EXPIRY:-24h}
+      REFRESH_TOKEN_EXPIRY: ${REFRESH_TOKEN_EXPIRY:-168h}
     depends_on:
       postgres:
         condition: service_healthy

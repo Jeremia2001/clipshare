@@ -1,26 +1,36 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react'
-import { api } from '../services/api'
-import { IsDevMode } from '../../wailsjs/go/main/App'
+import { api, setApiUrl } from '../services/api'
+import {
+  IsDevMode,
+  GetAuthStatus,
+  GetAuthToken,
+  SetupAdmin,
+  LoginAdmin,
+  RedeemInvite,
+  LogoutDevice,
+} from '../../wailsjs/go/main/App'
 
 interface User {
   id: string
-  email: string
-  username?: string
+  username: string
   display_name?: string
   avatar_url?: string
-  is_verified: boolean
-  storage_used_bytes: number
-  storage_quota_bytes: number
+  is_admin: boolean
 }
 
 const devUser: User = {
-  id: 'dev-user-id',
-  email: 'dev@localhost',
-  username: 'devuser',
+  id: '00000000-0000-0000-0000-000000000001',
+  username: 'dev',
   display_name: 'Developer',
-  is_verified: true,
-  storage_used_bytes: 0,
-  storage_quota_bytes: 10737418240,
+  is_admin: true,
+}
+
+export interface AuthBootstrap {
+  serverURL: string
+  accountUsername: string
+  hasToken: boolean
+  needsSetup: boolean
+  reachable: boolean
 }
 
 interface AuthContextType {
@@ -28,28 +38,60 @@ interface AuthContextType {
   isLoading: boolean
   isAuthenticated: boolean
   isDevMode: boolean
-  login: (email: string) => Promise<void>
-  verifyToken: (token: string) => Promise<void>
+  bootstrap: AuthBootstrap | null
+  refreshBootstrap: () => Promise<AuthBootstrap | null>
+  setupAdmin: (args: { serverURL: string; setupToken: string; username: string; password: string }) => Promise<void>
+  loginAdmin: (args: { serverURL: string; username: string; password: string }) => Promise<void>
+  redeemInvite: (args: { serverURL: string; code: string; username: string }) => Promise<void>
   logout: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
+async function loadBootstrap(): Promise<AuthBootstrap | null> {
+  try {
+    const s = await GetAuthStatus()
+    return {
+      serverURL: s.server_url,
+      accountUsername: s.account_username || '',
+      hasToken: s.has_token,
+      needsSetup: s.needs_setup,
+      reachable: s.reachable,
+    }
+  } catch {
+    return null
+  }
+}
+
+// Pull the token from the keyring and make it available to axios. Called
+// whenever we finish a login/setup/redeem or detect an existing session.
+async function attachStoredToken(): Promise<string> {
+  try {
+    const token = await GetAuthToken()
+    if (token) {
+      localStorage.setItem('access_token', token)
+    } else {
+      localStorage.removeItem('access_token')
+    }
+    return token
+  } catch {
+    return ''
+  }
+}
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [devMode, setDevMode] = useState(false)
+  const [bootstrap, setBootstrap] = useState<AuthBootstrap | null>(null)
 
-  const checkDevMode = useCallback(async () => {
-    try {
-      const result = await IsDevMode()
-      setDevMode(result)
-      return result
-    } catch {
-      const fallback = false
-      setDevMode(fallback)
-      return fallback
+  const refreshBootstrap = useCallback(async () => {
+    const b = await loadBootstrap()
+    setBootstrap(b)
+    if (b?.serverURL) {
+      setApiUrl(b.serverURL)
     }
+    return b
   }, [])
 
   const fetchUser = useCallback(async () => {
@@ -58,54 +100,62 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(response.data)
     } catch {
       localStorage.removeItem('access_token')
-    } finally {
-      setIsLoading(false)
+      setUser(null)
     }
   }, [])
 
   useEffect(() => {
     const init = async () => {
-      const isDev = await checkDevMode()
-
-      if (isDev) {
-        setUser(devUser)
-        setIsLoading(false)
-        return
-      }
-
-      const token = localStorage.getItem('access_token')
-      if (token) {
-        await fetchUser()
-      } else {
+      try {
+        const isDev = await IsDevMode()
+        setDevMode(isDev)
+        if (isDev) {
+          setUser(devUser)
+          return
+        }
+        const b = await refreshBootstrap()
+        if (b?.hasToken) {
+          await attachStoredToken()
+          await fetchUser()
+        }
+      } finally {
         setIsLoading(false)
       }
     }
-
     init()
-  }, [checkDevMode, fetchUser])
+  }, [fetchUser, refreshBootstrap])
 
-  const login = async (email: string) => {
-    if (devMode) {
-      setUser(devUser)
-      return
-    }
+  const setupAdmin: AuthContextType['setupAdmin'] = async ({ serverURL, setupToken, username, password }) => {
     setIsLoading(true)
     try {
-      await api.post('/auth/magic-link', { email })
+      await SetupAdmin(serverURL, setupToken, username, password)
+      await refreshBootstrap()
+      await attachStoredToken()
+      await fetchUser()
     } finally {
       setIsLoading(false)
     }
   }
 
-  const verifyToken = async (token: string) => {
+  const loginAdmin: AuthContextType['loginAdmin'] = async ({ serverURL, username, password }) => {
     setIsLoading(true)
     try {
-      const response = await api.post('/auth/verify', { token })
-      localStorage.setItem('access_token', response.data.access_token)
-      if (response.data.refresh_token) {
-        localStorage.setItem('refresh_token', response.data.refresh_token)
-      }
-      setUser(response.data.user)
+      await LoginAdmin(serverURL, username, password)
+      await refreshBootstrap()
+      await attachStoredToken()
+      await fetchUser()
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const redeemInvite: AuthContextType['redeemInvite'] = async ({ serverURL, code, username }) => {
+    setIsLoading(true)
+    try {
+      await RedeemInvite(serverURL, code, username)
+      await refreshBootstrap()
+      await attachStoredToken()
+      await fetchUser()
     } finally {
       setIsLoading(false)
     }
@@ -117,11 +167,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return
     }
     try {
-      await api.delete('/auth/logout')
+      await LogoutDevice()
     } finally {
       localStorage.removeItem('access_token')
-      localStorage.removeItem('refresh_token')
       setUser(null)
+      await refreshBootstrap()
     }
   }
 
@@ -131,9 +181,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       isLoading,
       isAuthenticated: !!user,
       isDevMode: devMode,
-      login,
-      verifyToken,
-      logout
+      bootstrap,
+      refreshBootstrap,
+      setupAdmin,
+      loginAdmin,
+      redeemInvite,
+      logout,
     }}>
       {children}
     </AuthContext.Provider>

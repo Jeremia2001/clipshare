@@ -54,17 +54,17 @@ function Layout() {
           <div className="px-3 pb-4 border-t border-forest-800/50 pt-4">
             <div className="flex items-center space-x-3 px-3 py-2">
               <div className="h-8 w-8 rounded-full bg-earth-700 flex items-center justify-center text-xs font-semibold text-earth-200 shrink-0">
-                {user.email?.[0].toUpperCase()}
+                {user.username?.[0]?.toUpperCase()}
               </div>
               <div className="min-w-0 flex-1">
-                <p className="text-sm text-sand-200 truncate">{user.display_name || user.email}</p>
+                <p className="text-sm text-sand-200 truncate">{user.display_name || user.username}</p>
                 <div className="flex items-center space-x-1.5">
                   {isDevMode && (
                     <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-earth-600/40 text-earth-300 rounded">
                       DEV
                     </span>
                   )}
-                  <span className="text-xs text-sand-600 truncate">{user.email}</span>
+                  <span className="text-xs text-sand-600 truncate">@{user.username}</span>
                 </div>
               </div>
               {!isDevMode && (

@@ -19,7 +19,7 @@ type JWTManager struct {
 
 type TokenClaims struct {
 	UserID    uuid.UUID `json:"user_id"`
-	Email     string    `json:"email"`
+	Username  string    `json:"username"`
 	IsAdmin   bool      `json:"is_admin"`
 	TokenType string    `json:"token_type"`
 	jwt.RegisteredClaims
@@ -41,10 +41,10 @@ func (j *JWTManager) Secret() []byte {
 	return j.secret
 }
 
-func (j *JWTManager) GenerateAccessToken(userID uuid.UUID, email string, isAdmin bool) (string, error) {
+func (j *JWTManager) GenerateAccessToken(userID uuid.UUID, username string, isAdmin bool) (string, error) {
 	claims := TokenClaims{
 		UserID:    userID,
-		Email:     email,
+		Username:  username,
 		IsAdmin:   isAdmin,
 		TokenType: "access",
 		RegisteredClaims: jwt.RegisteredClaims{

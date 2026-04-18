@@ -19,14 +19,16 @@ import (
 )
 
 type ClipHandler struct {
-	clipService *services.ClipService
-	jwtManager  *auth.JWTManager
+	clipService     *services.ClipService
+	instanceService *services.InstanceService
+	jwtManager      *auth.JWTManager
 }
 
-func NewClipHandler(clipService *services.ClipService, jwtManager *auth.JWTManager) *ClipHandler {
+func NewClipHandler(clipService *services.ClipService, instanceService *services.InstanceService, jwtManager *auth.JWTManager) *ClipHandler {
 	return &ClipHandler{
-		clipService: clipService,
-		jwtManager:  jwtManager,
+		clipService:     clipService,
+		instanceService: instanceService,
+		jwtManager:      jwtManager,
 	}
 }
 
@@ -88,6 +90,14 @@ func (h *ClipHandler) UploadFile(c *fiber.Ctx) error {
 	}
 
 	log.Printf("[UploadFile] Received file: %s (%d bytes, content-type: %s)", file.Filename, file.Size, file.Header.Get("Content-Type"))
+
+	// Reject before touching object storage if the server is out of room.
+	if err := h.instanceService.CheckRoomFor(c.Context(), file.Size); err != nil {
+		log.Printf("[UploadFile] Rejected: %v", err)
+		return c.Status(fiber.StatusInsufficientStorage).JSON(fiber.Map{
+			"error": "Server storage limit reached — ask the admin to free up space or raise the limit.",
+		})
+	}
 
 	f, err := file.Open()
 	if err != nil {

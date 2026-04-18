@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	clientauth "clipshare-desktop/internal/auth"
 	"clipshare-desktop/internal/config"
 	"clipshare-desktop/internal/ffmpeg"
 
@@ -282,21 +283,206 @@ func (a *App) UpdateAPIURL(url string) error {
 	return config.Save(a.config)
 }
 
+// -------------------- Auth (bound to frontend) --------------------
+
+// apiBase returns the normalized server base URL (no trailing slash).
+func (a *App) apiBase() string {
+	if a.config != nil && a.config.APIURL != "" {
+		return strings.TrimRight(a.config.APIURL, "/")
+	}
+	return "http://127.0.0.1:8080"
+}
+
+// authToken returns the stored device token for the current server, or "".
+// Safe to call when no token exists — callers should proceed without auth
+// and let the server's 401 surface naturally.
+func (a *App) authToken() string {
+	if a.config == nil {
+		return ""
+	}
+	tok, err := clientauth.LoadDeviceToken(a.config.APIURL)
+	if err != nil {
+		return ""
+	}
+	return tok
+}
+
+// AuthStatus is what the frontend uses on launch to decide which screen to show.
+type AuthStatus struct {
+	ServerURL       string `json:"server_url"`
+	AccountUsername string `json:"account_username,omitempty"`
+	HasToken        bool   `json:"has_token"`
+	NeedsSetup      bool   `json:"needs_setup"`
+	Reachable       bool   `json:"reachable"`
+}
+
+func (a *App) GetAuthStatus() (*AuthStatus, error) {
+	status := &AuthStatus{
+		ServerURL:       a.apiBase(),
+		AccountUsername: a.config.AccountUsername,
+		HasToken:        a.authToken() != "",
+	}
+	// Probe the server's setup state. If unreachable, leave reachable=false so
+	// the frontend can still show login with a "can't reach server" hint.
+	req, err := http.NewRequest("GET", a.apiBase()+"/api/v1/auth/status", nil)
+	if err != nil {
+		return status, nil
+	}
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return status, nil
+	}
+	defer resp.Body.Close()
+	status.Reachable = true
+	if resp.StatusCode == http.StatusOK {
+		var body struct {
+			NeedsSetup bool `json:"needs_setup"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&body); err == nil {
+			status.NeedsSetup = body.NeedsSetup
+		}
+	}
+	return status, nil
+}
+
+// SetupAdmin runs the first-time admin bootstrap using the setup token.
+// Stores the resulting JWT access token in the keyring so the admin can make
+// authenticated calls (no refresh token — admin re-enters their password on
+// expiry, which is fine for a self-hosted tool).
+func (a *App) SetupAdmin(serverURL, setupToken, username, password string) error {
+	serverURL = strings.TrimRight(serverURL, "/")
+	body, _ := json.Marshal(map[string]string{
+		"setup_token": setupToken, "username": username, "password": password,
+	})
+	resp, err := postJSON(serverURL+"/api/v1/auth/setup", body, "")
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		return readErr(resp)
+	}
+	var out struct {
+		AccessToken string `json:"access_token"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return err
+	}
+	return a.saveSession(serverURL, username, out.AccessToken)
+}
+
+// LoginAdmin authenticates the admin with username+password and stores the JWT.
+func (a *App) LoginAdmin(serverURL, username, password string) error {
+	serverURL = strings.TrimRight(serverURL, "/")
+	body, _ := json.Marshal(map[string]string{"username": username, "password": password})
+	resp, err := postJSON(serverURL+"/api/v1/auth/login", body, "")
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		return readErr(resp)
+	}
+	var out struct {
+		AccessToken string `json:"access_token"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return err
+	}
+	return a.saveSession(serverURL, username, out.AccessToken)
+}
+
+// RedeemInvite swaps an invite code for a long-lived device token.
+func (a *App) RedeemInvite(serverURL, code, username string) error {
+	serverURL = strings.TrimRight(serverURL, "/")
+	body, _ := json.Marshal(map[string]string{
+		"code": code, "username": username,
+	})
+	resp, err := postJSON(serverURL+"/api/v1/auth/redeem", body, "")
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		return readErr(resp)
+	}
+	var out struct {
+		DeviceToken string `json:"device_token"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return err
+	}
+	return a.saveSession(serverURL, username, out.DeviceToken)
+}
+
+func (a *App) saveSession(serverURL, username, token string) error {
+	a.config.APIURL = serverURL
+	a.config.AccountUsername = username
+	if err := config.Save(a.config); err != nil {
+		return err
+	}
+	return clientauth.SaveDeviceToken(serverURL, token)
+}
+
+// LogoutDevice clears stored credentials and best-effort notifies the server.
+func (a *App) LogoutDevice() error {
+	token := a.authToken()
+	if token != "" {
+		req, _ := http.NewRequest("DELETE", a.apiBase()+"/api/v1/auth/logout", nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		client := &http.Client{Timeout: 5 * time.Second}
+		if resp, err := client.Do(req); err == nil {
+			resp.Body.Close()
+		}
+	}
+	_ = clientauth.DeleteDeviceToken(a.config.APIURL)
+	a.config.AccountUsername = ""
+	return config.Save(a.config)
+}
+
+// GetAuthToken exposes the device token to the frontend so the React app can
+// attach it to its own axios calls.
+func (a *App) GetAuthToken() string {
+	return a.authToken()
+}
+
+func postJSON(url string, body []byte, bearer string) (*http.Response, error) {
+	req, err := http.NewRequest("POST", url, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if bearer != "" {
+		req.Header.Set("Authorization", "Bearer "+bearer)
+	}
+	client := &http.Client{Timeout: 15 * time.Second}
+	return client.Do(req)
+}
+
+func readErr(resp *http.Response) error {
+	b, _ := io.ReadAll(resp.Body)
+	var j struct {
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal(b, &j); err == nil && j.Error != "" {
+		return fmt.Errorf("%s", j.Error)
+	}
+	return fmt.Errorf("request failed: %s", strings.TrimSpace(string(b)))
+}
+
+// HandleAuthCallback is legacy magic-link deep-link handling; kept so any
+// registered clipshare:// handler doesn't break the app.
 func (a *App) HandleAuthCallback(rawURL string) (map[string]interface{}, error) {
 	parsedURL, err := url.Parse(rawURL)
 	if err != nil {
 		return nil, fmt.Errorf("invalid URL: %w", err)
 	}
-
-	query := parsedURL.Query()
-	token := query.Get("token")
+	token := parsedURL.Query().Get("token")
 	if token == "" {
 		return nil, fmt.Errorf("no token in URL")
 	}
-
-	return map[string]interface{}{
-		"token": token,
-	}, nil
+	return map[string]interface{}{"token": token}, nil
 }
 
 func (a *App) FFmpegIsAvailable() bool {
@@ -589,6 +775,9 @@ func (a *App) UploadFile(serveName string) (*UploadResult, error) {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
+	if tok := a.authToken(); tok != "" {
+		req.Header.Set("Authorization", "Bearer "+tok)
+	}
 
 	client := &http.Client{Timeout: 10 * time.Minute}
 	resp, err := client.Do(req)
@@ -660,6 +849,9 @@ func (a *App) uploadThumbnailDirect(thumbPath, clipID, apiBase string) error {
 		return err
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
+	if tok := a.authToken(); tok != "" {
+		req.Header.Set("Authorization", "Bearer "+tok)
+	}
 
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)

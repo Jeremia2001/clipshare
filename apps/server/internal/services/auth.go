@@ -2,234 +2,347 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"clipshare/internal/models"
 	"clipshare/internal/repository"
 	"clipshare/pkg/auth"
-	"clipshare/pkg/email"
 
 	"github.com/google/uuid"
 )
 
+var (
+	ErrAdminExists      = errors.New("admin already set up")
+	ErrInvalidSetup     = errors.New("invalid setup token")
+	ErrInvalidCreds     = errors.New("invalid credentials")
+	ErrInviteInvalid    = errors.New("invite code invalid or already used")
+	ErrDeviceNotFound   = errors.New("device not recognized")
+	ErrUserHasDevice    = errors.New("user already has a registered device")
+)
+
 type AuthService struct {
-	userRepo      repository.UserRepository
-	magicRepo     repository.MagicTokenRepository
-	refreshRepo   repository.RefreshTokenRepository
-	jwtManager    *auth.JWTManager
-	eemailService *email.Service
+	userRepo   repository.UserRepository
+	inviteRepo repository.InviteCodeRepository
+	deviceRepo repository.DeviceTokenRepository
+	setupRepo  repository.SetupTokenRepository
+	jwtManager *auth.JWTManager
 }
 
 func NewAuthService(
 	userRepo repository.UserRepository,
-	magicRepo repository.MagicTokenRepository,
-	refreshRepo repository.RefreshTokenRepository,
+	inviteRepo repository.InviteCodeRepository,
+	deviceRepo repository.DeviceTokenRepository,
+	setupRepo repository.SetupTokenRepository,
 	jwtManager *auth.JWTManager,
-	emailService *email.Service,
 ) *AuthService {
 	return &AuthService{
-		userRepo:      userRepo,
-		magicRepo:     magicRepo,
-		refreshRepo:   refreshRepo,
-		jwtManager:    jwtManager,
-		eemailService: emailService,
+		userRepo:   userRepo,
+		inviteRepo: inviteRepo,
+		deviceRepo: deviceRepo,
+		setupRepo:  setupRepo,
+		jwtManager: jwtManager,
 	}
 }
 
-type MagicLinkRequest struct {
-	Email string `json:"email" validate:"required,email"`
+type SetupStatus struct {
+	NeedsSetup bool `json:"needs_setup"`
 }
 
-type MagicLinkResponse struct {
-	Success  bool   `json:"success"`
-	Message  string `json:"message"`
-	DevToken string `json:"dev_token,omitempty"` // For development only
-}
+// -------------------- Bootstrap --------------------
 
-type VerifyRequest struct {
-	Token  string `json:"token" validate:"required"`
-	AppURL string `json:"app_url" validate:"required"`
-}
-
-type VerifyResponse struct {
-	AccessToken  string       `json:"access_token"`
-	RefreshToken string       `json:"refresh_token"`
-	ExpiresIn    int          `json:"expires_in"`
-	User         *models.User `json:"user"`
-}
-
-type RefreshRequest struct {
-	RefreshToken string `json:"refresh_token" validate:"required"`
-}
-
-type RefreshResponse struct {
-	AccessToken string `json:"access_token"`
-	ExpiresIn   int    `json:"expires_in"`
-}
-
-func (s *AuthService) RequestMagicLink(ctx context.Context, email, appURL string) (*MagicLinkResponse, error) {
-	// Find or create user
-	user, err := s.userRepo.GetByEmail(ctx, email)
+func (s *AuthService) Status(ctx context.Context) (*SetupStatus, error) {
+	adminExists, err := s.userRepo.AnyAdminExists(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get user: %w", err)
+		return nil, err
 	}
+	return &SetupStatus{NeedsSetup: !adminExists}, nil
+}
 
-	if user == nil {
-		// Create new user
-		user, err = s.userRepo.Create(ctx, email)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create user: %w", err)
+// EnsureSetupToken creates a one-time setup token iff no admin exists and
+// no unused setup token is already persisted. Returns the plaintext token
+// (empty string if none was created — either admin exists or an unused
+// token is already present and still valid).
+func (s *AuthService) EnsureSetupToken(ctx context.Context) (string, error) {
+	adminExists, err := s.userRepo.AnyAdminExists(ctx)
+	if err != nil {
+		return "", err
+	}
+	if adminExists {
+		// No need for a setup token — drop any leftover ones to keep state clean.
+		_ = s.setupRepo.DeleteAll(ctx)
+		return "", nil
+	}
+	unused, err := s.setupRepo.AnyUnused(ctx)
+	if err != nil {
+		return "", err
+	}
+	if unused {
+		// Can't surface the plaintext of an existing token (only hash is stored).
+		// Rotate: wipe and mint a fresh one so the admin can re-read it from logs.
+		if err := s.setupRepo.DeleteAll(ctx); err != nil {
+			return "", err
 		}
 	}
-
-	// Generate magic token
-	token, tokenHash, err := auth.GenerateMagicToken()
+	token, err := auth.GenerateCode(4, 5)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate token: %w", err)
+		return "", err
 	}
-
-	// Store token hash
-	expiresAt := time.Now().Add(15 * time.Minute)
-	_, err = s.magicRepo.Create(ctx, user.ID, tokenHash, expiresAt)
-	if err != nil {
-		return nil, fmt.Errorf("failed to store token: %w", err)
+	if err := s.setupRepo.Create(ctx, auth.HashToken(auth.NormalizeCode(token))); err != nil {
+		return "", err
 	}
-
-	// Send email (if configured)
-	if s.eemailService != nil && s.eemailService.IsConfigured() {
-		if err := s.eemailService.SendMagicLink(email, token, appURL); err != nil {
-			// In development, return token directly
-			return &MagicLinkResponse{
-				Success:  true,
-				Message:  "Magic link generated (email not sent - use dev_token)",
-				DevToken: token,
-			}, nil
-		}
-	}
-
-	return &MagicLinkResponse{
-		Success:  true,
-		Message:  "Magic link sent to your email",
-		DevToken: token, // Always return in development
-	}, nil
+	return token, nil
 }
 
-func (s *AuthService) VerifyMagicLink(ctx context.Context, token, appURL string) (*VerifyResponse, error) {
-	// Hash the token and look it up
-	tokenHash := auth.HashToken(token)
-
-	magicToken, err := s.magicRepo.GetByHash(ctx, tokenHash)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get token: %w", err)
-	}
-
-	if magicToken == nil {
-		return nil, fmt.Errorf("invalid or expired token")
-	}
-
-	// Mark token as used
-	if err := s.magicRepo.MarkUsed(ctx, magicToken.ID); err != nil {
-		return nil, fmt.Errorf("failed to mark token used: %w", err)
-	}
-
-	// Get user
-	user, err := s.userRepo.GetByID(ctx, magicToken.UserID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get user: %w", err)
-	}
-
-	if user == nil {
-		return nil, fmt.Errorf("user not found")
-	}
-
-	// Update last login
-	if err := s.userRepo.UpdateLastLogin(ctx, user.ID); err != nil {
-		// Log but don't fail
-		_ = err
-	}
-
-	// Verify email if not already
-	if !user.IsVerified {
-		if err := s.userRepo.VerifyEmail(ctx, user.ID); err != nil {
-			_ = err
-		}
-	}
-
-	// Generate tokens
-	accessToken, err := s.jwtManager.GenerateAccessToken(user.ID, user.Email, user.IsAdmin)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate access token: %w", err)
-	}
-
-	refreshToken, refreshHash, err := s.jwtManager.GenerateRefreshToken(user.ID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate refresh token: %w", err)
-	}
-
-	// Store refresh token
-	refreshExpiresAt := time.Now().Add(7 * 24 * time.Hour)
-	_, err = s.refreshRepo.Create(ctx, user.ID, refreshHash, refreshExpiresAt)
-	if err != nil {
-		return nil, fmt.Errorf("failed to store refresh token: %w", err)
-	}
-
-	return &VerifyResponse{
-		AccessToken:  accessToken,
-		RefreshToken: refreshToken,
-		ExpiresIn:    int(s.jwtManager.AccessTokenExpiry().Seconds()),
-		User:         user,
-	}, nil
+type SetupAdminRequest struct {
+	SetupToken string `json:"setup_token"`
+	Username   string `json:"username"`
+	Password   string `json:"password"`
 }
 
-func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string) (*RefreshResponse, error) {
-	// Hash and lookup
-	tokenHash := auth.HashToken(refreshToken)
+type LoginResponse struct {
+	AccessToken string       `json:"access_token"`
+	ExpiresIn   int          `json:"expires_in"`
+	User        *models.User `json:"user"`
+}
 
-	storedToken, err := s.refreshRepo.GetByHash(ctx, tokenHash)
+func (s *AuthService) SetupAdmin(ctx context.Context, req SetupAdminRequest) (*LoginResponse, error) {
+	if req.Username == "" || req.Password == "" || req.SetupToken == "" {
+		return nil, fmt.Errorf("username, password, and setup_token are required")
+	}
+	adminExists, err := s.userRepo.AnyAdminExists(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get refresh token: %w", err)
+		return nil, err
 	}
-
-	if storedToken == nil {
-		return nil, fmt.Errorf("invalid refresh token")
+	if adminExists {
+		return nil, ErrAdminExists
 	}
-
-	// Get user
-	user, err := s.userRepo.GetByID(ctx, storedToken.UserID)
+	ok, err := s.setupRepo.ConsumeByHash(ctx, auth.HashToken(auth.NormalizeCode(req.SetupToken)))
 	if err != nil {
-		return nil, fmt.Errorf("failed to get user: %w", err)
+		return nil, err
 	}
-
-	if user == nil {
-		return nil, fmt.Errorf("user not found")
+	if !ok {
+		return nil, ErrInvalidSetup
 	}
-
-	// Generate new access token
-	accessToken, err := s.jwtManager.GenerateAccessToken(user.ID, user.Email, user.IsAdmin)
+	hash, err := auth.HashPassword(req.Password)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate access token: %w", err)
+		return nil, err
 	}
+	user, err := s.userRepo.CreateAdmin(ctx, req.Username, hash)
+	if err != nil {
+		return nil, fmt.Errorf("create admin: %w", err)
+	}
+	// No more setup tokens needed.
+	_ = s.setupRepo.DeleteAll(ctx)
 
-	return &RefreshResponse{
+	accessToken, err := s.jwtManager.GenerateAccessToken(user.ID, user.Username, user.IsAdmin)
+	if err != nil {
+		return nil, err
+	}
+	return &LoginResponse{
 		AccessToken: accessToken,
 		ExpiresIn:   int(s.jwtManager.AccessTokenExpiry().Seconds()),
+		User:        user,
 	}, nil
 }
 
-func (s *AuthService) Logout(ctx context.Context, userID uuid.UUID, refreshToken string) error {
-	if refreshToken != "" {
-		tokenHash := auth.HashToken(refreshToken)
-		storedToken, err := s.refreshRepo.GetByHash(ctx, tokenHash)
-		if err == nil && storedToken != nil {
-			_ = s.refreshRepo.Revoke(ctx, storedToken.ID)
-		}
-	}
-	return nil
+// -------------------- Admin login --------------------
+
+type LoginRequest struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
 }
 
-func (s *AuthService) LogoutAll(ctx context.Context, userID uuid.UUID) error {
-	return s.refreshRepo.RevokeAllForUser(ctx, userID)
+func (s *AuthService) AdminLogin(ctx context.Context, req LoginRequest) (*LoginResponse, error) {
+	if req.Username == "" || req.Password == "" {
+		return nil, ErrInvalidCreds
+	}
+	user, err := s.userRepo.GetByUsername(ctx, req.Username)
+	if err != nil {
+		return nil, err
+	}
+	if user == nil || !user.IsAdmin || user.PasswordHash == nil {
+		return nil, ErrInvalidCreds
+	}
+	ok, err := auth.VerifyPassword(req.Password, *user.PasswordHash)
+	if err != nil || !ok {
+		return nil, ErrInvalidCreds
+	}
+	_ = s.userRepo.UpdateLastLogin(ctx, user.ID)
+
+	accessToken, err := s.jwtManager.GenerateAccessToken(user.ID, user.Username, user.IsAdmin)
+	if err != nil {
+		return nil, err
+	}
+	return &LoginResponse{
+		AccessToken: accessToken,
+		ExpiresIn:   int(s.jwtManager.AccessTokenExpiry().Seconds()),
+		User:        user,
+	}, nil
+}
+
+// -------------------- Invites --------------------
+
+type CreateInviteRequest struct {
+	Note          string `json:"note,omitempty"`
+	ExpiresInDays int    `json:"expires_in_days,omitempty"`
+}
+
+type CreateInviteResponse struct {
+	Code    string    `json:"code"`
+	Invite  *InviteView `json:"invite"`
+}
+
+type InviteView struct {
+	ID         uuid.UUID  `json:"id"`
+	Note       *string    `json:"note,omitempty"`
+	RedeemedBy *uuid.UUID `json:"redeemed_by,omitempty"`
+	RedeemedAt *time.Time `json:"redeemed_at,omitempty"`
+	ExpiresAt  *time.Time `json:"expires_at,omitempty"`
+	CreatedAt  time.Time  `json:"created_at"`
+}
+
+func toInviteView(inv *models.InviteCode) *InviteView {
+	return &InviteView{
+		ID: inv.ID, Note: inv.Note,
+		RedeemedBy: inv.RedeemedBy, RedeemedAt: inv.RedeemedAt,
+		ExpiresAt: inv.ExpiresAt, CreatedAt: inv.CreatedAt,
+	}
+}
+
+func (s *AuthService) CreateInvite(ctx context.Context, adminID uuid.UUID, req CreateInviteRequest) (*CreateInviteResponse, error) {
+	code, err := auth.GenerateCode(3, 4)
+	if err != nil {
+		return nil, err
+	}
+	var note *string
+	if req.Note != "" {
+		n := req.Note
+		note = &n
+	}
+	var expiresAt *time.Time
+	if req.ExpiresInDays > 0 {
+		t := time.Now().Add(time.Duration(req.ExpiresInDays) * 24 * time.Hour)
+		expiresAt = &t
+	}
+	inv, err := s.inviteRepo.Create(ctx, auth.HashToken(auth.NormalizeCode(code)), adminID, note, expiresAt)
+	if err != nil {
+		return nil, err
+	}
+	return &CreateInviteResponse{Code: code, Invite: toInviteView(inv)}, nil
+}
+
+func (s *AuthService) ListInvites(ctx context.Context) ([]*InviteView, error) {
+	rows, err := s.inviteRepo.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*InviteView, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, toInviteView(r))
+	}
+	return out, nil
+}
+
+func (s *AuthService) DeleteInvite(ctx context.Context, id uuid.UUID) error {
+	return s.inviteRepo.Delete(ctx, id)
+}
+
+// -------------------- Invite redemption --------------------
+
+type RedeemRequest struct {
+	Code        string `json:"code"`
+	Username    string `json:"username"`
+	DeviceLabel string `json:"device_label,omitempty"`
+}
+
+type RedeemResponse struct {
+	DeviceToken string       `json:"device_token"`
+	User        *models.User `json:"user"`
+}
+
+func (s *AuthService) RedeemInvite(ctx context.Context, req RedeemRequest) (*RedeemResponse, error) {
+	if req.Code == "" || req.Username == "" {
+		return nil, ErrInviteInvalid
+	}
+	inv, err := s.inviteRepo.GetByHash(ctx, auth.HashToken(auth.NormalizeCode(req.Code)))
+	if err != nil {
+		return nil, err
+	}
+	if inv == nil || inv.RedeemedAt != nil {
+		return nil, ErrInviteInvalid
+	}
+	if inv.ExpiresAt != nil && inv.ExpiresAt.Before(time.Now()) {
+		return nil, ErrInviteInvalid
+	}
+
+	// Find or create the user for this username.
+	user, err := s.userRepo.GetByUsername(ctx, req.Username)
+	if err != nil {
+		return nil, err
+	}
+	if user == nil {
+		user, err = s.userRepo.Create(ctx, req.Username)
+		if err != nil {
+			return nil, fmt.Errorf("create user: %w", err)
+		}
+	}
+
+	// One user = one device. If there's already a token, this invite attempt fails.
+	existing, err := s.deviceRepo.GetByUserID(ctx, user.ID)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		return nil, ErrUserHasDevice
+	}
+
+	// Atomically mark the invite redeemed. Prevents double-spending.
+	if err := s.inviteRepo.MarkRedeemed(ctx, inv.ID, user.ID); err != nil {
+		return nil, ErrInviteInvalid
+	}
+
+	token, err := auth.GenerateDeviceToken()
+	if err != nil {
+		return nil, err
+	}
+	var label *string
+	if req.DeviceLabel != "" {
+		l := req.DeviceLabel
+		label = &l
+	}
+	if _, err := s.deviceRepo.Create(ctx, user.ID, auth.HashToken(token), label); err != nil {
+		return nil, err
+	}
+
+	_ = s.userRepo.UpdateLastLogin(ctx, user.ID)
+	return &RedeemResponse{DeviceToken: token, User: user}, nil
+}
+
+// ValidateDeviceToken is used by middleware to look up a device token.
+// Returns the associated user + device token record, or nil if unknown.
+func (s *AuthService) ValidateDeviceToken(ctx context.Context, token string) (*models.User, *models.DeviceToken, error) {
+	tok, err := s.deviceRepo.GetByHash(ctx, auth.HashToken(token))
+	if err != nil {
+		return nil, nil, err
+	}
+	if tok == nil {
+		return nil, nil, nil
+	}
+	user, err := s.userRepo.GetByID(ctx, tok.UserID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if user == nil {
+		return nil, nil, nil
+	}
+	_ = s.deviceRepo.Touch(ctx, tok.ID)
+	return user, tok, nil
+}
+
+func (s *AuthService) LogoutDevice(ctx context.Context, userID uuid.UUID) error {
+	return s.deviceRepo.DeleteByUserID(ctx, userID)
 }
 
 func (s *AuthService) GetUser(ctx context.Context, userID uuid.UUID) (*models.User, error) {

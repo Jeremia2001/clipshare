@@ -1,169 +1,150 @@
 package handlers
 
 import (
-	"time"
+	"errors"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 
+	"clipshare/internal/middleware"
 	"clipshare/internal/services"
-	"clipshare/pkg/auth"
 )
 
 type AuthHandler struct {
 	authService *services.AuthService
-	jwtManager  *auth.JWTManager
 }
 
-func NewAuthHandler(authService *services.AuthService, jwtManager *auth.JWTManager) *AuthHandler {
-	return &AuthHandler{
-		authService: authService,
-		jwtManager:  jwtManager,
-	}
+func NewAuthHandler(authService *services.AuthService) *AuthHandler {
+	return &AuthHandler{authService: authService}
 }
 
 func (h *AuthHandler) RegisterRoutes(r fiber.Router) {
-	auth := r.Group("/auth")
-	auth.Post("/magic-link", h.RequestMagicLink)
-	auth.Post("/verify", h.VerifyMagicLink)
-	auth.Post("/refresh", h.RefreshToken)
-	auth.Delete("/logout", h.Logout)
-	auth.Get("/me", h.GetCurrentUser)
+	g := r.Group("/auth")
+	g.Get("/status", h.Status)
+	g.Post("/setup", h.SetupAdmin)
+	g.Post("/login", h.AdminLogin)
+	g.Post("/redeem", h.RedeemInvite)
+	g.Get("/me", h.GetCurrentUser)
+	g.Delete("/logout", h.Logout)
+
+	// Admin-only invite management.
+	g.Post("/invites", middleware.RequireAdmin, h.CreateInvite)
+	g.Get("/invites", middleware.RequireAdmin, h.ListInvites)
+	g.Delete("/invites/:id", middleware.RequireAdmin, h.DeleteInvite)
 }
 
-func (h *AuthHandler) RequestMagicLink(c *fiber.Ctx) error {
-	var req services.MagicLinkRequest
-	if err := c.BodyParser(&req); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Invalid request body",
-		})
-	}
-
-	if req.Email == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Email is required",
-		})
-	}
-
-	appURL := c.Get("X-App-URL", "clipshare://auth")
-
-	resp, err := h.authService.RequestMagicLink(c.Context(), req.Email, appURL)
+func (h *AuthHandler) Status(c *fiber.Ctx) error {
+	status, err := h.authService.Status(c.Context())
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": err.Error(),
-		})
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
+	return c.JSON(status)
+}
 
+func (h *AuthHandler) SetupAdmin(c *fiber.Ctx) error {
+	var req services.SetupAdminRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request body"})
+	}
+	resp, err := h.authService.SetupAdmin(c.Context(), req)
+	if err != nil {
+		switch {
+		case errors.Is(err, services.ErrAdminExists):
+			return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": err.Error()})
+		case errors.Is(err, services.ErrInvalidSetup):
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": err.Error()})
+		default:
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+		}
+	}
 	return c.JSON(resp)
 }
 
-func (h *AuthHandler) VerifyMagicLink(c *fiber.Ctx) error {
-	var req services.VerifyRequest
+func (h *AuthHandler) AdminLogin(c *fiber.Ctx) error {
+	var req services.LoginRequest
 	if err := c.BodyParser(&req); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Invalid request body",
-		})
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request body"})
 	}
-
-	if req.Token == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Token is required",
-		})
-	}
-
-	resp, err := h.authService.VerifyMagicLink(c.Context(), req.Token, req.AppURL)
+	resp, err := h.authService.AdminLogin(c.Context(), req)
 	if err != nil {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-			"error": err.Error(),
-		})
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Invalid username or password"})
 	}
-
-	// Set refresh token in HTTP-only cookie
-	c.Cookie(&fiber.Cookie{
-		Name:     "refresh_token",
-		Value:    resp.RefreshToken,
-		Expires:  time.Now().Add(7 * 24 * time.Hour),
-		HTTPOnly: true,
-		Secure:   c.Protocol() == "https",
-		SameSite: "Strict",
-	})
-
-	// Don't send refresh token in response body for production
-	resp.RefreshToken = ""
-
 	return c.JSON(resp)
 }
 
-func (h *AuthHandler) RefreshToken(c *fiber.Ctx) error {
-	var req services.RefreshRequest
+func (h *AuthHandler) RedeemInvite(c *fiber.Ctx) error {
+	var req services.RedeemRequest
 	if err := c.BodyParser(&req); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Invalid request body",
-		})
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request body"})
 	}
-
-	// Try from body, then from cookie
-	refreshToken := req.RefreshToken
-	if refreshToken == "" {
-		refreshToken = c.Cookies("refresh_token")
-	}
-
-	if refreshToken == "" {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-			"error": "Refresh token required",
-		})
-	}
-
-	resp, err := h.authService.RefreshToken(c.Context(), refreshToken)
+	resp, err := h.authService.RedeemInvite(c.Context(), req)
 	if err != nil {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-			"error": err.Error(),
-		})
+		switch {
+		case errors.Is(err, services.ErrUserHasDevice):
+			return c.Status(fiber.StatusConflict).JSON(fiber.Map{
+				"error": "this account already has a registered device; ask the admin for a new invite on a different username",
+			})
+		default:
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Invalid or expired invite code"})
+		}
 	}
-
 	return c.JSON(resp)
+}
+
+func (h *AuthHandler) CreateInvite(c *fiber.Ctx) error {
+	userID, ok := c.Locals("user_id").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Not authenticated"})
+	}
+	var req services.CreateInviteRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request body"})
+	}
+	resp, err := h.authService.CreateInvite(c.Context(), userID, req)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(resp)
+}
+
+func (h *AuthHandler) ListInvites(c *fiber.Ctx) error {
+	rows, err := h.authService.ListInvites(c.Context())
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"invites": rows})
+}
+
+func (h *AuthHandler) DeleteInvite(c *fiber.Ctx) error {
+	id, err := uuid.Parse(c.Params("id"))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid invite id"})
+	}
+	if err := h.authService.DeleteInvite(c.Context(), id); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"success": true})
 }
 
 func (h *AuthHandler) Logout(c *fiber.Ctx) error {
-	userID := c.Locals("user_id")
-	if userID == nil {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-			"error": "Not authenticated",
-		})
+	userID, ok := c.Locals("user_id").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Not authenticated"})
 	}
-
-	refreshToken := c.Cookies("refresh_token")
-
-	err := h.authService.Logout(c.Context(), userID.(uuid.UUID), refreshToken)
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": err.Error(),
-		})
+	if err := h.authService.LogoutDevice(c.Context(), userID); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
-
-	// Clear cookie
-	c.ClearCookie("refresh_token")
-
-	return c.JSON(fiber.Map{
-		"success": true,
-		"message": "Logged out successfully",
-	})
+	return c.JSON(fiber.Map{"success": true})
 }
 
 func (h *AuthHandler) GetCurrentUser(c *fiber.Ctx) error {
-	userID := c.Locals("user_id")
-	if userID == nil {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-			"error": "Not authenticated",
-		})
+	userID, ok := c.Locals("user_id").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Not authenticated"})
 	}
-
-	user, err := h.authService.GetUser(c.Context(), userID.(uuid.UUID))
+	user, err := h.authService.GetUser(c.Context(), userID)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": err.Error(),
-		})
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
-
 	return c.JSON(user)
 }

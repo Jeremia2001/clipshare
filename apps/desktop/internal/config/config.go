@@ -7,11 +7,12 @@ import (
 )
 
 type Config struct {
-	APIURL       string   `json:"api_url"`
-	Theme        string   `json:"theme"`
-	AutoStart    bool     `json:"auto_start"`
-	WatchFolders []string `json:"watch_folders"`
-	DevMode      bool     `json:"dev_mode"`
+	APIURL          string   `json:"api_url"`
+	AccountUsername string   `json:"account_username,omitempty"`
+	Theme           string   `json:"theme"`
+	AutoStart       bool     `json:"auto_start"`
+	WatchFolders    []string `json:"watch_folders"`
+	DevMode         bool     `json:"dev_mode"`
 }
 
 func getConfigPath() string {
