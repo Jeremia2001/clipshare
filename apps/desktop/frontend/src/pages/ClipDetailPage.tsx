@@ -107,6 +107,7 @@ function ClipDetailPage() {
       navigate('/')
     } catch {
       setConfirmingDelete(false)
+      setError('Failed to delete clip. Please try again.')
     }
     setDeleting(false)
   }

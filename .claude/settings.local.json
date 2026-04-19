@@ -19,7 +19,8 @@
       "Bash(docker exec *)",
       "Bash(go list *)",
       "Bash(docker compose *)",
-      "Bash(grep -E \"\\\\.\\(js|json|ts\\)$\")"
+      "Bash(grep -E \"\\\\.\\(js|json|ts\\)$\")",
+      "Bash(xargs grep *)"
     ]
   }
 }

@@ -12,21 +12,21 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth()
   
   if (isLoading) {
-    return <div className="min-h-screen bg-gray-900 flex items-center justify-center text-white">Loading...</div>
+    return <div className="min-h-screen bg-forest-950 flex items-center justify-center text-sand-500">Loading...</div>
   }
-  
+
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />
   }
-  
+
   return children
 }
 
 function AuthRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth()
-  
+
   if (isLoading) {
-    return <div className="min-h-screen bg-gray-900 flex items-center justify-center text-white">Loading...</div>
+    return <div className="min-h-screen bg-forest-950 flex items-center justify-center text-sand-500">Loading...</div>
   }
   
   if (isAuthenticated) {

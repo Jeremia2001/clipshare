@@ -115,7 +115,6 @@ func CORSConfig() fiber.Handler {
 		c.Set("Access-Control-Allow-Origin", "*")
 		c.Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		c.Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-App-URL")
-		c.Set("Access-Control-Allow-Credentials", "true")
 
 		if c.Method() == "OPTIONS" {
 			return c.SendStatus(fiber.StatusNoContent)

@@ -66,10 +66,6 @@ func (h *ClipHandler) getUserID(c *fiber.Ctx) (uuid.UUID, error) {
 
 	switch v := idStr.(type) {
 	case string:
-		if v == "dev-user-id" {
-			devUUID, _ := uuid.Parse("00000000-0000-0000-0000-000000000001")
-			return devUUID, nil
-		}
 		return uuid.Parse(v)
 	case uuid.UUID:
 		return v, nil
@@ -962,6 +958,13 @@ func (h *ClipHandler) DownloadClip(c *fiber.Ctx) error {
 	if err != nil || clip == nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 			"error": "Clip not found",
+		})
+	}
+
+	userID, _ := h.getUserID(c)
+	if !clip.IsPublic && clip.UserID != userID {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+			"error": "Not authorized to download this clip",
 		})
 	}
 

@@ -111,6 +111,12 @@ func (s *AuthService) SetupAdmin(ctx context.Context, req SetupAdminRequest) (*L
 	if req.Username == "" || req.Password == "" || req.SetupToken == "" {
 		return nil, fmt.Errorf("username, password, and setup_token are required")
 	}
+	if len(req.Username) > 32 {
+		return nil, fmt.Errorf("username must be 32 characters or fewer")
+	}
+	if len(req.Password) < 8 {
+		return nil, fmt.Errorf("password must be at least 8 characters")
+	}
 	adminExists, err := s.userRepo.AnyAdminExists(ctx)
 	if err != nil {
 		return nil, err
@@ -265,6 +271,9 @@ type RedeemResponse struct {
 func (s *AuthService) RedeemInvite(ctx context.Context, req RedeemRequest) (*RedeemResponse, error) {
 	if req.Code == "" || req.Username == "" {
 		return nil, ErrInviteInvalid
+	}
+	if len(req.Username) > 32 {
+		return nil, fmt.Errorf("username must be 32 characters or fewer")
 	}
 	inv, err := s.inviteRepo.GetByHash(ctx, auth.HashToken(auth.NormalizeCode(req.Code)))
 	if err != nil {

@@ -122,6 +122,7 @@ export const clipApi = {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest()
       xhr.open('POST', url)
+      xhr.timeout = 600_000
       const token = localStorage.getItem('access_token')
       if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`)
       xhr.onload = () => {
@@ -185,6 +186,7 @@ export const clipApi = {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest()
       xhr.open('POST', url)
+      xhr.timeout = 60_000
       const token = localStorage.getItem('access_token')
       if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`)
       xhr.onload = () => {
@@ -192,6 +194,7 @@ export const clipApi = {
         else reject(new Error(`Thumbnail upload failed: ${xhr.status}`))
       }
       xhr.onerror = () => reject(new Error('Network error'))
+      xhr.ontimeout = () => reject(new Error('Thumbnail upload timed out'))
       const formData = new FormData()
       formData.append('thumbnail', blob, 'thumbnail.jpg')
       xhr.send(formData)

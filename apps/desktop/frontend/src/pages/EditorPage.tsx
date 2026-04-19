@@ -157,23 +157,23 @@ function VideoPlayer({ src, onDurationChange, onDimensionsChange, onTrimChange }
     const t = v.currentTime
     const newStart = Math.max(0, Math.min(t, trimEndRef.current - 0.5))
     setTrimStart(newStart)
-    onTrimChange(newStart, trimEnd)
-  }, [trimEnd, onTrimChange])
+    onTrimChangeRef.current(newStart, trimEndRef.current)
+  }, [])
 
   const markOut = useCallback(() => {
     const v = videoEl.current
     if (!v) return
     const t = v.currentTime
-    const newEnd = Math.min(duration, Math.max(t, trimStartRef.current + 0.5))
+    const newEnd = Math.min(durationRef.current, Math.max(t, trimStartRef.current + 0.5))
     setTrimEnd(newEnd)
-    onTrimChange(trimStart, newEnd)
-  }, [duration, trimStart, onTrimChange])
+    onTrimChangeRef.current(trimStartRef.current, newEnd)
+  }, [])
 
   const seek = useCallback((time: number) => {
     const v = videoEl.current
-    if (!v || !duration) return
-    v.currentTime = Math.max(0, Math.min(time, duration))
-  }, [duration])
+    if (!v || !durationRef.current) return
+    v.currentTime = Math.max(0, Math.min(time, durationRef.current))
+  }, [])
 
   const togglePlay = useCallback(() => {
     const v = videoEl.current
@@ -239,18 +239,18 @@ function VideoPlayer({ src, onDurationChange, onDimensionsChange, onTrimChange }
   }, [dragging])
 
   const adjustTrimStart = useCallback((delta: number) => {
-    const newStart = Math.max(0, Math.min(trimStart + delta, trimEnd - 0.5))
+    const newStart = Math.max(0, Math.min(trimStartRef.current + delta, trimEndRef.current - 0.5))
     setTrimStart(newStart)
     seek(newStart)
-    onTrimChange(newStart, trimEnd)
-  }, [trimStart, trimEnd, seek])
+    onTrimChangeRef.current(newStart, trimEndRef.current)
+  }, [seek])
 
   const adjustTrimEnd = useCallback((delta: number) => {
-    const newEnd = Math.min(duration, Math.max(trimEnd + delta, trimStart + 0.5))
+    const newEnd = Math.min(durationRef.current, Math.max(trimEndRef.current + delta, trimStartRef.current + 0.5))
     setTrimEnd(newEnd)
     seek(newEnd)
-    onTrimChange(trimStart, newEnd)
-  }, [trimStart, trimEnd, duration, seek])
+    onTrimChangeRef.current(trimStartRef.current, newEnd)
+  }, [seek])
 
   const confirmStartEdit = useCallback(() => {
     const parts = startInput.split(':')
@@ -261,13 +261,13 @@ function VideoPlayer({ src, onDurationChange, onDimensionsChange, onTrimChange }
       seconds = parseFloat(startInput)
     }
     if (!isNaN(seconds)) {
-      const newStart = Math.max(0, Math.min(seconds, trimEnd - 0.5))
+      const newStart = Math.max(0, Math.min(seconds, trimEndRef.current - 0.5))
       setTrimStart(newStart)
       seek(newStart)
-      onTrimChange(newStart, trimEnd)
+      onTrimChangeRef.current(newStart, trimEndRef.current)
     }
     setEditingStart(false)
-  }, [startInput, trimEnd, seek])
+  }, [startInput, seek])
 
   const confirmEndEdit = useCallback(() => {
     const parts = endInput.split(':')
@@ -278,13 +278,13 @@ function VideoPlayer({ src, onDurationChange, onDimensionsChange, onTrimChange }
       seconds = parseFloat(endInput)
     }
     if (!isNaN(seconds)) {
-      const newEnd = Math.min(duration, Math.max(seconds, trimStart + 0.5))
+      const newEnd = Math.min(durationRef.current, Math.max(seconds, trimStartRef.current + 0.5))
       setTrimEnd(newEnd)
       seek(newEnd)
-      onTrimChange(trimStart, newEnd)
+      onTrimChangeRef.current(trimStartRef.current, newEnd)
     }
     setEditingEnd(false)
-  }, [endInput, duration, trimStart, seek])
+  }, [endInput, seek])
 
   const startPct = duration > 0 ? (trimStart / duration) * 100 : 0
   const endPct = duration > 0 ? (trimEnd / duration) * 100 : 100

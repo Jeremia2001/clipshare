@@ -134,8 +134,12 @@ function InviteManager() {
   }
 
   const handleDelete = async (id: string) => {
-    await api.delete(`/auth/invites/${id}`)
-    await refresh()
+    try {
+      await api.delete(`/auth/invites/${id}`)
+      await refresh()
+    } catch (err: any) {
+      setError(err?.response?.data?.error || 'Failed to delete invite')
+    }
   }
 
   return (

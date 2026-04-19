@@ -24,17 +24,20 @@ function LibraryPage() {
   const [deleting, setDeleting] = useState<string | null>(null)
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null)
   const [copiedShareUrl, setCopiedShareUrl] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
   const [thumbnailUrls, setThumbnailUrls] = useState<Record<string, string>>({})
   const thumbnailUrlsRef = useRef<Record<string, string>>({})
 
   const fetchClips = useCallback(async () => {
     setLoading(true)
+    setError(null)
     try {
       const { data } = await clipApi.list(page, 20)
       setClips(data.clips || [])
       setTotal(data.total)
     } catch {
       setClips([])
+      setError('Failed to load clips. Check your connection to the server.')
     }
     setLoading(false)
   }, [page])
@@ -67,6 +70,12 @@ function LibraryPage() {
     })
   }, [clips])
 
+  useEffect(() => {
+    return () => {
+      Object.values(thumbnailUrlsRef.current).forEach(url => URL.revokeObjectURL(url))
+    }
+  }, [])
+
   const handleDelete = async (clipId: string) => {
     setDeleting(clipId)
     setConfirmingDelete(null)
@@ -74,7 +83,9 @@ function LibraryPage() {
       await clipApi.delete(clipId)
       setClips(prev => prev.filter(c => c.id !== clipId))
       setTotal(prev => prev - 1)
-    } catch {}
+    } catch {
+      setError('Failed to delete clip. Please try again.')
+    }
     setDeleting(null)
   }
 
@@ -146,6 +157,15 @@ function LibraryPage() {
           <span>New Clip</span>
         </button>
       </div>
+
+      {error && (
+        <div className="bg-earth-900/40 border border-earth-700/50 text-earth-300 px-4 py-3 rounded-lg text-sm flex items-center justify-between">
+          <span>{error}</span>
+          <button onClick={() => setError(null)} className="text-earth-400 hover:text-earth-300 ml-3 shrink-0">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
 
       <div className="flex items-center space-x-3">
         <div className="relative flex-1 max-w-md">

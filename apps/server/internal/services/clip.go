@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/subtle"
 	"fmt"
 	"io"
 	"log"
@@ -14,6 +15,7 @@ import (
 	"clipshare/internal/models"
 	"clipshare/internal/repository"
 	"clipshare/internal/storage"
+	"clipshare/pkg/auth"
 
 	"github.com/google/uuid"
 )
@@ -122,7 +124,7 @@ func (s *ClipService) FinalizeUpload(ctx context.Context, clipID, userID uuid.UU
 	}
 
 	if err := s.userRepo.UpdateStorageUsed(ctx, userID, req.FileSizeBytes); err != nil {
-		_ = err
+		log.Printf("[FinalizeUpload] failed to update storage usage for user %s: %v", userID, err)
 	}
 
 	return clip, nil
@@ -188,6 +190,9 @@ func (s *ClipService) StreamClipFileRange(ctx context.Context, clip *models.Clip
 }
 
 func (s *ClipService) ListUserClips(ctx context.Context, userID uuid.UUID, page, perPage int) (*ClipListResponse, error) {
+	if page < 1 {
+		page = 1
+	}
 	if perPage <= 0 {
 		perPage = 20
 	}
@@ -321,14 +326,16 @@ func (s *ClipService) DeleteClip(ctx context.Context, clipID, userID uuid.UUID) 
 	}
 
 	if err := s.rustfs.DeleteObject(ctx, clip.RustfsBucket, clip.RustfsObjectKey); err != nil {
-		_ = err
+		log.Printf("[DeleteClip] failed to delete object %s/%s: %v", clip.RustfsBucket, clip.RustfsObjectKey, err)
 	}
 
 	if err := s.clipRepo.Delete(ctx, clipID); err != nil {
 		return err
 	}
 
-	_ = s.userRepo.UpdateStorageUsed(ctx, userID, -clip.FileSizeBytes)
+	if err := s.userRepo.UpdateStorageUsed(ctx, userID, -clip.FileSizeBytes); err != nil {
+		log.Printf("[DeleteClip] failed to update storage usage for user %s: %v", userID, err)
+	}
 
 	return nil
 }
@@ -456,7 +463,7 @@ func (s *ClipService) ValidateShareAccess(ctx context.Context, code string, pass
 			return nil, nil, fmt.Errorf("password required")
 		}
 		hash := sha256Hash(*password)
-		if hash != *share.PasswordHash {
+		if subtle.ConstantTimeCompare([]byte(hash), []byte(*share.PasswordHash)) != 1 {
 			return nil, nil, fmt.Errorf("incorrect password")
 		}
 	}
@@ -537,10 +544,10 @@ func (s *ClipService) CreateGuestComment(ctx context.Context, code string, passw
 		return nil, fmt.Errorf("comment is required")
 	}
 	if len([]rune(name)) > maxCommentNameLength {
-		name = string([]rune(name)[:maxCommentNameLength])
+		return nil, fmt.Errorf("name must be %d characters or fewer", maxCommentNameLength)
 	}
 	if len([]rune(body)) > maxCommentContentLength {
-		body = string([]rune(body)[:maxCommentContentLength])
+		return nil, fmt.Errorf("comment must be %d characters or fewer", maxCommentContentLength)
 	}
 
 	comment := &models.Comment{
@@ -552,7 +559,12 @@ func (s *ClipService) CreateGuestComment(ctx context.Context, code string, passw
 }
 
 func generateShareCode() string {
-	return uuid.New().String()[:8]
+	code, err := auth.GenerateCode(1, 8)
+	if err != nil {
+		// crypto/rand failure is extremely rare; fall back to UUID.
+		return uuid.New().String()[:8]
+	}
+	return strings.ToLower(code)
 }
 
 func (s *ClipService) ShareURL(shareCode string, customSlug *string) string {
