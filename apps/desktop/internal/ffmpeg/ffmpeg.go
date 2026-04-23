@@ -319,7 +319,7 @@ func trimArgs(opts TrimOptions, enc encoderConfig, progress bool) []string {
 	bp := resolutionBitrate(opts.SourceWidth, opts.SourceHeight)
 	args = append(args, "-maxrate", bp.maxrate, "-bufsize", bp.bufsize, "-b:v", bp.bv)
 
-	args = append(args, "-c:a", "aac", "-b:a", enc.audioBitrate, "-movflags", "+faststart")
+	args = append(args, "-c:a", "aac", "-b:a", enc.audioBitrate, "-ar", "48000", "-ac", "2", "-profile:a", "aac_low", "-movflags", "+faststart")
 	if progress {
 		args = append(args, "-progress", "pipe:1")
 	}

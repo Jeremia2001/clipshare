@@ -529,6 +529,7 @@ function EditorPage() {
   const [videoDuration, setVideoDuration] = useState(0)
   const [videoWidth, setVideoWidth] = useState(0)
   const [videoHeight, setVideoHeight] = useState(0)
+  const [videoCodec, setVideoCodec] = useState('')
 
   const [mediaServerURL, setMediaServerURL] = useState('')
   const [ffmpegAvailable, setFfmpegAvailable] = useState(false)
@@ -592,6 +593,7 @@ function EditorPage() {
             setVideoDuration(probe.duration)
             setVideoWidth(probe.width)
             setVideoHeight(probe.height)
+            setVideoCodec(probe.codec)
             setTrimEnd(probe.duration)
             setTrimStart(0)
           }
@@ -620,36 +622,46 @@ function EditorPage() {
     setTrimEnd(end)
   }
 
+  const isHEVC = (codec: string) => {
+    const c = codec.toLowerCase()
+    return c === 'hevc' || c === 'h265' || c === 'hvc1' || c === 'hev1'
+  }
+
   const handleUpload = async () => {
     if (!selectedFilePath || !servedName) return
 
     abortRef.current = false
     const isTrimmed = trimStart > 0.5 || trimEnd < videoDuration - 0.5
+    const needsTranscode = ffmpegAvailable && isHEVC(videoCodec)
+    console.log('[upload] codec=%s ffmpegAvailable=%s isTrimmed=%s needsTranscode=%s trimStart=%s trimEnd=%s duration=%s',
+      videoCodec, ffmpegAvailable, isTrimmed, needsTranscode, trimStart, trimEnd, videoDuration)
 
-    if (isTrimmed && ffmpegAvailable) {
+    if ((isTrimmed || needsTranscode) && ffmpegAvailable) {
       setProcessing(true)
-      setProcessingProgress('Trimming video...')
+      setProcessingProgress(isTrimmed ? 'Trimming video...' : 'Converting HEVC to H.264 for browser compatibility...')
       try {
         const trimmedServeName = await TrimVideo({
           input_path: selectedFilePath,
           start_time: trimStart,
           duration: Math.max(0.1, trimEnd - trimStart),
         })
+        console.log('[upload] TrimVideo succeeded, serveName=%s', trimmedServeName)
 
         if (abortRef.current) { setProcessing(false); return }
 
-        setProcessingProgress('Uploading trimmed clip...')
+        setProcessingProgress('Uploading clip...')
         const result = await UploadFile(trimmedServeName)
+        console.log('[upload] uploaded clip_id=%s file_size=%d', result.clip_id, result.file_size_bytes)
         setProcessing(false)
         if (abortRef.current) return
         await finalizeUpload(result.clip_id, result.file_size_bytes)
       } catch (err: any) {
         if (abortRef.current) { setProcessing(false); return }
-        console.error('[EditorPage] Native ffmpeg trim error:', err)
+        console.error('[EditorPage] TrimVideo failed, falling back to original:', err)
         setProcessing(false)
         const detail = err?.message || String(err)
         const shortDetail = detail.split('\n')[0].substring(0, 120)
-        setError(`Trimming failed: ${shortDetail}. Uploading full clip instead.`)
+        setError(`Processing failed: ${shortDetail}. Uploading original instead.`)
         try {
           const result = await UploadFile(servedName)
           if (abortRef.current) return
@@ -719,6 +731,7 @@ function EditorPage() {
     setVideoDuration(0)
     setVideoWidth(0)
     setVideoHeight(0)
+    setVideoCodec('')
     setProcessing(false)
     setProcessingProgress('')
   }
