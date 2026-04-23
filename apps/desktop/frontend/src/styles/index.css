@@ -2,13 +2,15 @@
 @tailwind components;
 @tailwind utilities;
 
+@import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&display=swap');
+
 :root {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   line-height: 1.5;
   font-weight: 400;
   color-scheme: dark;
-  color: rgba(255, 255, 255, 0.9);
-  background-color: #0d1a12;
+  color: rgba(224, 224, 232, 0.95);
+  background-color: #070a08;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -19,7 +21,15 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
-  background-color: #0d1a12;
+  background-color: #070a08;
+  /* Subtle scanline texture for 2000s CRT feel */
+  background-image: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 3px,
+    rgba(0, 0, 0, 0.06) 3px,
+    rgba(0, 0, 0, 0.06) 4px
+  );
 }
 
 #root {
@@ -33,36 +43,45 @@ body {
   }
 
   ::-webkit-scrollbar-track {
-    background: #111c14;
+    background: #0c0f0c;
   }
 
   ::-webkit-scrollbar-thumb {
-    background: #304c34;
-    border-radius: 4px;
+    background: #1e3e18;
+    border-radius: 2px;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background: #3b5d3f;
+    background: #2e8c1e;
   }
 }
 
 @layer components {
   .btn-primary {
-    @apply bg-forest-600 hover:bg-forest-500 text-white px-4 py-2 rounded-lg font-medium transition-all duration-200 ease-out;
-    @apply focus:outline-none focus:ring-2 focus:ring-forest-400 focus:ring-offset-2 focus:ring-offset-forest-950;
+    @apply bg-forest-600 hover:bg-forest-500 text-white px-4 py-2 rounded font-semibold transition-all duration-200 ease-out uppercase tracking-wider text-sm;
+    @apply focus:outline-none focus:ring-2 focus:ring-forest-500 focus:ring-offset-2 focus:ring-offset-forest-950;
+    box-shadow: 0 0 0 transparent;
+  }
+  .btn-primary:hover {
+    box-shadow: 0 0 14px rgba(82, 176, 67, 0.35);
   }
 
   .btn-secondary {
-    @apply bg-sand-800/50 hover:bg-sand-700/50 text-sand-200 px-4 py-2 rounded-lg font-medium transition-all duration-200 ease-out border border-sand-700/50;
+    @apply bg-sand-900/60 hover:bg-sand-800/60 text-sand-300 px-4 py-2 rounded font-medium transition-all duration-200 ease-out border border-sand-700/40 text-sm;
     @apply focus:outline-none focus:ring-2 focus:ring-sand-500 focus:ring-offset-2 focus:ring-offset-forest-950;
   }
 
   .btn-ghost {
-    @apply text-sand-400 hover:text-sand-200 hover:bg-sand-800/30 px-3 py-2 rounded-lg transition-all duration-200;
+    @apply text-sand-500 hover:text-sand-200 hover:bg-sand-800/20 px-3 py-2 rounded transition-all duration-200;
+  }
+
+  .btn-danger {
+    @apply bg-earth-900/50 hover:bg-earth-800/60 text-earth-300 px-4 py-2 rounded font-medium transition-all duration-200 ease-out border border-earth-700/50 text-sm;
   }
 
   .card {
-    @apply bg-forest-950/80 border border-forest-800/60 rounded-xl;
+    @apply bg-[#0c100c]/90 border border-forest-800/50 rounded-lg;
+    box-shadow: inset 0 1px 0 rgba(82, 176, 67, 0.05);
   }
 
   .card-body {
@@ -70,31 +89,37 @@ body {
   }
 
   .input-field {
-    @apply w-full bg-forest-950 border border-forest-800 rounded-lg px-4 py-2.5 text-sand-100 placeholder-sand-600 transition-all duration-200;
-    @apply focus:outline-none focus:ring-2 focus:ring-forest-500 focus:border-forest-600;
+    @apply w-full bg-[#0c100c] border border-forest-800/70 rounded px-4 py-2.5 text-sand-100 placeholder-sand-600 transition-all duration-200 text-sm;
+    @apply focus:outline-none focus:ring-2 focus:ring-forest-500/60 focus:border-forest-600;
   }
 
   .section-header {
-    @apply px-6 py-4 border-b border-forest-800/60;
-  }
-
-  .btn-danger {
-    @apply bg-earth-900/50 hover:bg-earth-800/50 text-earth-300 px-4 py-2 rounded-lg font-medium transition-all duration-200 ease-out border border-earth-700/50;
+    @apply px-6 py-4 border-b border-forest-800/50;
   }
 
   .badge {
-    @apply inline-flex items-center px-2 py-0.5 text-xs font-medium rounded;
+    @apply inline-flex items-center px-2 py-0.5 text-xs font-semibold rounded uppercase tracking-wider;
   }
 
   .badge-forest {
-    @apply badge bg-forest-800/60 text-forest-300;
+    @apply badge bg-forest-800/60 text-forest-400;
   }
 
   .badge-earth {
-    @apply badge bg-earth-800/60 text-earth-300;
+    @apply badge bg-earth-900/60 text-earth-300;
   }
 
   .badge-moss {
     @apply badge bg-moss-800/60 text-moss-300;
   }
+}
+
+/* Xbox-style green glow utility */
+.xbox-glow {
+  box-shadow: 0 0 16px rgba(82, 176, 67, 0.4), 0 0 32px rgba(82, 176, 67, 0.15);
+}
+
+/* Nav font override */
+.nav-font {
+  font-family: 'Rajdhani', 'Inter', system-ui, sans-serif;
 }

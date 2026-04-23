@@ -18,72 +18,106 @@ function Layout() {
   }
 
   return (
-    <div className="min-h-screen bg-forest-950 text-sand-100 flex">
-      {/* Sidebar */}
-      <aside className="w-60 bg-forest-950/90 border-r border-forest-800/50 flex flex-col shrink-0">
-        {/* Logo */}
-        <div className="px-5 py-5 border-b border-forest-800/50">
-          <Link to="/" className="flex items-center space-x-2.5 group">
-            <div className="h-9 w-9 rounded-lg bg-forest-600 flex items-center justify-center group-hover:bg-forest-500 transition-colors">
-              <Video className="h-5 w-5 text-forest-50" />
-            </div>
-            <span className="text-lg font-bold text-sand-100 tracking-tight">ClipShare</span>
-          </Link>
-        </div>
+    <div className="min-h-screen bg-forest-950 text-sand-100 flex flex-col">
+      {/* Top accent line — Xbox green stripe */}
+      <div className="h-[2px] bg-gradient-to-r from-transparent via-forest-500/70 to-transparent shrink-0" />
 
-        {/* Navigation */}
-        <nav className="flex-1 px-3 py-4 space-y-1">
-          {navItems.map(({ path, label, icon: Icon }) => (
-            <Link
-              key={path}
-              to={path}
-              className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-200 ${
-                isActive(path)
-                  ? 'bg-forest-700/50 text-sand-100 font-semibold'
-                  : 'font-medium text-sand-500 hover:text-sand-300 hover:bg-forest-900/50'
-              }`}
-            >
-              <Icon className={`h-[18px] w-[18px] shrink-0 ${isActive(path) ? 'text-forest-400' : ''}`} />
-              <span>{label}</span>
-            </Link>
-          ))}
+      {/* Top Navigation Bar */}
+      <header className="h-12 bg-[#080c08] border-b border-forest-800/30 flex items-stretch shrink-0 relative z-10">
+        {/* Logo */}
+        <Link
+          to="/"
+          className="flex items-center gap-2.5 px-5 border-r border-forest-800/30 hover:bg-forest-900/40 transition-colors shrink-0"
+        >
+          <div className="h-7 w-7 bg-forest-600 flex items-center justify-center rounded-sm"
+            style={{ boxShadow: '0 0 10px rgba(82, 176, 67, 0.3)' }}>
+            <Video className="h-4 w-4 text-white" />
+          </div>
+          <span
+            className="font-black text-white text-sm tracking-[0.18em] uppercase nav-font"
+            style={{ textShadow: '0 0 12px rgba(82, 176, 67, 0.4)' }}
+          >
+            ClipShare
+          </span>
+        </Link>
+
+        {/* Navigation blades */}
+        <nav className="flex items-stretch">
+          {navItems.map(({ path, label, icon: Icon }) => {
+            const active = isActive(path)
+            return (
+              <Link
+                key={path}
+                to={path}
+                className="group relative flex items-center h-full px-7 transition-colors"
+              >
+                {/* Parallelogram blade background */}
+                <span
+                  className={`absolute inset-y-[3px] inset-x-1 -skew-x-[10deg] rounded-[2px] transition-all duration-200 ${
+                    active
+                      ? 'bg-forest-700/70'
+                      : 'bg-transparent group-hover:bg-forest-900/60'
+                  }`}
+                  style={active ? {
+                    boxShadow: '0 0 14px rgba(82, 176, 67, 0.25), inset 0 1px 0 rgba(82, 176, 67, 0.15)',
+                  } : {}}
+                />
+                {/* Bottom active indicator */}
+                {active && (
+                  <span
+                    className="absolute bottom-0 left-1 right-1 h-[2px] bg-forest-500"
+                    style={{ boxShadow: '0 0 8px rgba(82, 176, 67, 0.9)' }}
+                  />
+                )}
+                {/* Content */}
+                <span className={`relative flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.16em] nav-font transition-colors duration-200 ${
+                  active
+                    ? 'text-forest-400'
+                    : 'text-sand-500 group-hover:text-sand-300'
+                }`}>
+                  <Icon className="h-3.5 w-3.5 shrink-0" />
+                  <span>{label}</span>
+                </span>
+              </Link>
+            )
+          })}
         </nav>
 
-        {/* User section */}
+        {/* User section — right aligned */}
         {user && (
-          <div className="px-3 pb-4 border-t border-forest-800/50 pt-4">
-            <div className="flex items-center space-x-3 px-3 py-2">
-              <div className="h-8 w-8 rounded-full bg-earth-700 flex items-center justify-center text-xs font-semibold text-earth-200 shrink-0">
-                {user.username?.[0]?.toUpperCase()}
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm text-sand-200 truncate">{user.display_name || user.username}</p>
-                <div className="flex items-center space-x-1.5">
-                  {isDevMode && (
-                    <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-earth-600/40 text-earth-300 rounded">
-                      DEV
-                    </span>
-                  )}
-                  <span className="text-xs text-sand-600 truncate">@{user.username}</span>
-                </div>
-              </div>
-              {!isDevMode && (
-                <button
-                  onClick={logout}
-                  className="text-sand-600 hover:text-sand-400 p-1 rounded transition-colors shrink-0"
-                  title="Sign out"
-                >
-                  <LogOut className="h-4 w-4" />
-                </button>
-              )}
+          <div className="ml-auto flex items-center gap-3 px-4 border-l border-forest-800/30">
+            {isDevMode && (
+              <span className="px-1.5 py-0.5 text-[9px] font-bold bg-earth-900/60 text-earth-400 rounded-sm tracking-[0.15em] uppercase">
+                DEV
+              </span>
+            )}
+            <div
+              className="h-6 w-6 rounded-sm bg-forest-800 border border-forest-700/60 flex items-center justify-center text-[10px] font-bold text-forest-400 shrink-0"
+            >
+              {user.username?.[0]?.toUpperCase()}
             </div>
+            <span className="text-xs text-sand-500 font-medium tracking-wide">
+              {user.display_name || user.username}
+            </span>
+            {!isDevMode && (
+              <button
+                onClick={logout}
+                className="text-sand-600 hover:text-forest-400 p-1 rounded transition-colors shrink-0"
+                title="Sign out"
+              >
+                <LogOut className="h-3.5 w-3.5" />
+              </button>
+            )}
           </div>
         )}
-      </aside>
+      </header>
+
+      {/* Bottom nav accent */}
+      <div className="h-px bg-gradient-to-r from-transparent via-forest-600/20 to-transparent shrink-0" />
 
       {/* Main content */}
       <main className="flex-1 min-w-0 overflow-auto">
-        <div className="max-w-6xl mx-auto px-8 py-8">
+        <div className="max-w-[1600px] mx-auto px-4 py-6">
           <Outlet />
         </div>
       </main>
