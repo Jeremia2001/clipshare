@@ -58,94 +58,71 @@ body {
 
 @layer components {
   .btn-primary {
-    @apply text-white px-5 py-2 font-black transition-all duration-200 ease-out uppercase text-sm;
-    @apply focus:outline-none;
-    font-family: 'Rajdhani', 'Inter', system-ui, sans-serif;
-    letter-spacing: 0.16em;
-    clip-path: polygon(10px 0%, 100% 0%, calc(100% - 10px) 100%, 0% 100%);
-    background: linear-gradient(
-      to bottom,
-      rgba(82, 176, 67, 0.12) 0%,
-      rgba(30, 96, 20, 0.45) 15%,
-      rgba(8, 24, 6, 0.72) 100%
-    );
-    border: 1px solid rgba(82, 176, 67, 0.42);
+    @apply text-white px-5 py-2 font-semibold transition-all duration-150 ease-out text-sm rounded-sm;
+    @apply focus:outline-none focus-visible:ring-2 focus-visible:ring-forest-500/70;
+    background: linear-gradient(180deg, #3a9e22 0%, #206012 100%);
+    border: 1px solid rgba(82, 176, 67, 0.35);
+    border-top-color: rgba(100, 210, 80, 0.4);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.5), inset 0 1px 0 rgba(120, 230, 90, 0.12);
   }
   .btn-primary:hover {
-    background: linear-gradient(
-      to bottom,
-      rgba(82, 176, 67, 0.18) 0%,
-      rgba(46, 140, 30, 0.58) 15%,
-      rgba(14, 40, 10, 0.82) 100%
-    );
-    border-color: rgba(82, 176, 67, 0.7);
-    filter: drop-shadow(0 0 12px rgba(82, 176, 67, 0.5));
-  }
-  .btn-primary:focus-visible {
-    filter: drop-shadow(0 0 14px rgba(82, 176, 67, 0.85));
+    background: linear-gradient(180deg, #46b82a 0%, #2a7a18 100%);
+    border-color: rgba(82, 176, 67, 0.55);
+    box-shadow: 0 0 16px rgba(82, 176, 67, 0.35), 0 2px 6px rgba(0,0,0,0.5), inset 0 1px 0 rgba(130, 240, 100, 0.15);
   }
   .btn-primary:active {
-    transform: scaleY(0.95);
-    filter: drop-shadow(0 0 6px rgba(82, 176, 67, 0.4));
+    transform: translateY(1px);
+    box-shadow: 0 0 8px rgba(82, 176, 67, 0.2), 0 1px 2px rgba(0,0,0,0.4);
   }
 
   .btn-secondary {
-    @apply text-sand-400 hover:text-sand-200 px-5 py-2 font-bold transition-all duration-200 ease-out text-sm uppercase;
-    @apply focus:outline-none;
-    font-family: 'Rajdhani', 'Inter', system-ui, sans-serif;
-    letter-spacing: 0.12em;
-    clip-path: polygon(8px 0%, 100% 0%, calc(100% - 8px) 100%, 0% 100%);
-    background: rgba(20, 20, 30, 0.6);
-    border: 1px solid rgba(112, 112, 124, 0.32);
+    @apply px-5 py-2 font-medium transition-all duration-150 ease-out text-sm rounded-sm;
+    @apply focus:outline-none focus-visible:ring-2 focus-visible:ring-forest-700/50;
+    color: rgba(88, 148, 72, 0.88);
+    background: rgba(8, 20, 6, 0.65);
+    border: 1px solid rgba(46, 140, 30, 0.28);
+    box-shadow: inset 0 1px 0 rgba(82, 176, 67, 0.06);
   }
   .btn-secondary:hover {
-    background: rgba(32, 32, 44, 0.75);
-    border-color: rgba(140, 140, 160, 0.5);
-    filter: drop-shadow(0 0 7px rgba(112, 112, 124, 0.35));
+    color: rgba(112, 175, 90, 0.95);
+    background: rgba(14, 32, 10, 0.85);
+    border-color: rgba(82, 176, 67, 0.5);
+    box-shadow: 0 0 12px rgba(82, 176, 67, 0.15), inset 0 1px 0 rgba(82, 176, 67, 0.08);
   }
 
   .btn-ghost {
-    @apply text-sand-500 hover:text-sand-200 hover:bg-sand-800/20 px-3 py-2 rounded transition-all duration-200;
+    @apply text-sand-500 hover:text-sand-200 hover:bg-sand-800/20 px-3 py-2 rounded transition-all duration-150;
   }
 
   .btn-cancel {
-    @apply text-sand-500 hover:text-sand-200 px-4 py-2 font-bold transition-all duration-200 ease-out text-sm uppercase;
+    @apply px-4 py-2 font-medium transition-all duration-150 ease-out text-sm rounded-sm;
     @apply focus:outline-none;
-    font-family: 'Rajdhani', 'Inter', system-ui, sans-serif;
-    letter-spacing: 0.12em;
-    clip-path: polygon(8px 0%, 100% 0%, calc(100% - 8px) 100%, 0% 100%);
-    background: rgba(16, 18, 22, 0.4);
-    border: 1px solid rgba(80, 80, 95, 0.22);
+    color: rgba(95, 100, 110, 0.9);
+    background: transparent;
+    border: 1px solid rgba(65, 70, 85, 0.28);
   }
   .btn-cancel:hover {
-    background: rgba(28, 30, 40, 0.6);
-    border-color: rgba(112, 112, 124, 0.38);
-    filter: drop-shadow(0 0 5px rgba(112, 112, 124, 0.2));
+    color: rgba(155, 160, 170, 0.95);
+    background: rgba(20, 22, 30, 0.45);
+    border-color: rgba(95, 100, 120, 0.45);
   }
 
   .btn-danger {
-    @apply text-earth-300 hover:text-earth-200 px-5 py-2 font-bold transition-all duration-200 ease-out text-sm uppercase;
-    @apply focus:outline-none;
-    font-family: 'Rajdhani', 'Inter', system-ui, sans-serif;
-    letter-spacing: 0.12em;
-    clip-path: polygon(8px 0%, 100% 0%, calc(100% - 8px) 100%, 0% 100%);
-    background: linear-gradient(
-      to bottom,
-      rgba(148, 24, 24, 0.12) 0%,
-      rgba(60, 10, 10, 0.45) 15%,
-      rgba(16, 4, 4, 0.72) 100%
-    );
-    border: 1px solid rgba(148, 24, 24, 0.45);
+    @apply px-5 py-2 font-medium transition-all duration-150 ease-out text-sm rounded-sm;
+    @apply focus:outline-none focus-visible:ring-2 focus-visible:ring-earth-700/50;
+    color: rgba(185, 115, 108, 0.88);
+    background: rgba(30, 6, 6, 0.75);
+    border: 1px solid rgba(148, 24, 24, 0.4);
+    box-shadow: inset 0 1px 0 rgba(200, 40, 40, 0.06);
   }
   .btn-danger:hover {
-    background: linear-gradient(
-      to bottom,
-      rgba(188, 32, 32, 0.18) 0%,
-      rgba(90, 14, 14, 0.58) 15%,
-      rgba(24, 6, 6, 0.82) 100%
-    );
-    border-color: rgba(188, 32, 32, 0.65);
-    filter: drop-shadow(0 0 10px rgba(188, 32, 32, 0.45));
+    color: rgba(205, 135, 128, 0.95);
+    background: rgba(55, 10, 10, 0.9);
+    border-color: rgba(188, 32, 32, 0.6);
+    box-shadow: 0 0 14px rgba(188, 32, 32, 0.28), 0 2px 6px rgba(0,0,0,0.5), inset 0 1px 0 rgba(220, 60, 60, 0.08);
+  }
+  .btn-danger:active {
+    transform: translateY(1px);
   }
 
   .card {
@@ -211,28 +188,27 @@ body {
   letter-spacing: 0.1em;
 }
 
-/* Blade-style tab button — for mode selectors */
+/* Tab button — for mode selectors */
 .xbox-tab {
-  @apply px-3 py-2 text-sm font-bold uppercase transition-all duration-200 focus:outline-none;
-  font-family: 'Rajdhani', 'Inter', system-ui, sans-serif;
-  letter-spacing: 0.12em;
-  clip-path: polygon(8px 0%, 100% 0%, calc(100% - 8px) 100%, 0% 100%);
+  @apply px-4 py-2.5 text-sm font-medium transition-all duration-150 focus:outline-none rounded-sm;
+  border: 1px solid rgba(30, 50, 25, 0.4);
+  background: rgba(8, 14, 8, 0.5);
+  box-shadow: inset 0 -2px 0 transparent;
 }
 .xbox-tab-active {
-  background: linear-gradient(to bottom, rgba(30, 96, 20, 0.5), rgba(8, 24, 6, 0.7));
-  border: 1px solid rgba(82, 176, 67, 0.45);
-  color: rgba(130, 210, 110, 1);
-  filter: drop-shadow(0 0 6px rgba(82, 176, 67, 0.35));
+  background: rgba(14, 32, 10, 0.8);
+  border-color: rgba(82, 176, 67, 0.3);
+  color: rgba(130, 210, 110, 0.95);
+  box-shadow: inset 0 -2px 0 rgba(82, 176, 67, 0.7);
 }
 .xbox-tab-inactive {
-  background: rgba(12, 16, 12, 0.6);
-  border: 1px solid rgba(40, 60, 35, 0.5);
-  color: rgba(112, 112, 124, 1);
+  color: rgba(85, 95, 83, 0.9);
 }
 .xbox-tab-inactive:hover {
-  background: rgba(20, 28, 18, 0.7);
-  border-color: rgba(60, 100, 50, 0.5);
-  color: rgba(170, 170, 180, 1);
+  background: rgba(12, 22, 10, 0.7);
+  border-color: rgba(50, 80, 40, 0.45);
+  color: rgba(135, 150, 130, 0.95);
+  box-shadow: inset 0 -2px 0 rgba(60, 120, 40, 0.3);
 }
 
 /* Consistent error / warning panel */
