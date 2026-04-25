@@ -24,11 +24,11 @@ function SettingsPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center space-x-3">
-        <div className="h-10 w-10 rounded-lg bg-forest-800/50 flex items-center justify-center">
+        <div className="h-10 w-10 rounded-sm bg-forest-900/70 border border-forest-700/40 flex items-center justify-center">
           <SettingsIcon className="h-5 w-5 text-forest-400" />
         </div>
         <div>
-          <h1 className="text-2xl font-bold text-sand-100">Settings</h1>
+          <h1 className="text-2xl text-sand-100 xbox-title">Settings</h1>
           <p className="text-sm text-sand-500">Manage your app and account preferences</p>
         </div>
       </div>
@@ -56,7 +56,7 @@ function SettingsPage() {
           </div>
           <div className="card-body space-y-5">
             <div className="flex items-center space-x-4">
-              <div className="h-10 w-10 rounded-lg bg-earth-800/50 flex items-center justify-center shrink-0">
+              <div className="h-10 w-10 rounded-sm bg-earth-900/60 border border-earth-700/40 flex items-center justify-center shrink-0">
                 <User className="h-5 w-5 text-earth-400" />
               </div>
               <div className="flex-1">
@@ -69,7 +69,7 @@ function SettingsPage() {
               <div className="border-t border-forest-800/40 pt-5">
                 <button
                   onClick={logout}
-                  className="flex items-center space-x-2 text-sm text-red-300 hover:text-red-200"
+                  className="inline-flex items-center space-x-2 text-sm text-earth-500 hover:text-earth-300 nav-font uppercase tracking-wide font-bold transition-colors"
                 >
                   <LogOut className="h-4 w-4" />
                   <span>Sign out &amp; forget this device</span>
@@ -167,12 +167,12 @@ function InviteManager() {
         </div>
 
         {lastCode && (
-          <div className="px-3 py-3 rounded-lg bg-forest-900/70 border border-forest-700">
-            <div className="text-xs text-sand-500 mb-1">New invite code (shown once):</div>
+          <div className="xbox-info">
+            <div className="text-xs text-sand-500 mb-1 uppercase tracking-wider nav-font">New invite code (shown once):</div>
             <div className="flex items-center justify-between">
-              <code className="font-mono text-sand-100 text-lg tracking-wider">{lastCode}</code>
+              <code className="font-mono text-forest-300 text-lg tracking-widest">{lastCode}</code>
               <button
-                className="text-sand-400 hover:text-sand-200"
+                className="text-sand-400 hover:text-sand-200 transition-colors"
                 onClick={() => navigator.clipboard.writeText(lastCode)}
                 title="Copy to clipboard"
               >
@@ -183,16 +183,16 @@ function InviteManager() {
         )}
 
         {error && (
-          <div className="text-sm text-red-300">{error}</div>
+          <div className="xbox-error">{error}</div>
         )}
 
         <div className="border-t border-forest-800/40 pt-4">
           <div className="text-xs text-sand-600 mb-2">{loading ? 'Loading…' : `${invites.length} invite${invites.length === 1 ? '' : 's'}`}</div>
           <div className="space-y-2">
             {invites.map((inv) => (
-              <div key={inv.id} className="flex items-center justify-between px-3 py-2 rounded-lg bg-forest-900/40">
+              <div key={inv.id} className="flex items-center justify-between px-3 py-2 bg-forest-900/30 border border-forest-800/40 border-l-forest-600/40" style={{ borderLeftWidth: '2px' }}>
                 <div className="text-sm">
-                  <div className="text-sand-200">{inv.note || <span className="text-sand-600 italic">no note</span>}</div>
+                  <div className="text-sand-300">{inv.note || <span className="text-sand-600 italic">no note</span>}</div>
                   <div className="text-xs text-sand-600">
                     {inv.redeemed_at
                       ? `redeemed ${new Date(inv.redeemed_at).toLocaleString()}`
@@ -202,7 +202,7 @@ function InviteManager() {
                 </div>
                 <button
                   onClick={() => handleDelete(inv.id)}
-                  className="text-sand-500 hover:text-red-300"
+                  className="text-sand-600 hover:text-earth-400 transition-colors p-1"
                   title={inv.redeemed_at ? 'Remove entry' : 'Revoke'}
                 >
                   <Trash2 className="h-4 w-4" />
@@ -266,7 +266,7 @@ function ServerStorage({ isAdmin }: { isAdmin: boolean }) {
   const limit = status?.limit_bytes || 0
   const percent = limit > 0 ? Math.min(100, (used / limit) * 100) : 0
   const isFull = limit > 0 && used >= limit
-  const barColor = isFull ? 'bg-red-500' : percent > 85 ? 'bg-earth-500' : 'bg-forest-500'
+  const barColor = isFull ? 'bg-earth-600' : percent > 85 ? 'bg-earth-500' : 'bg-forest-500'
 
   return (
     <div className="card">
@@ -285,12 +285,12 @@ function ServerStorage({ isAdmin }: { isAdmin: boolean }) {
                 <span>{limit > 0 ? `of ${formatBytes(limit)}` : 'no limit'}</span>
               </div>
               {limit > 0 && (
-                <div className="mt-2 h-2 bg-forest-900 rounded-full overflow-hidden">
-                  <div className={`h-full ${barColor} rounded-full transition-all duration-500`} style={{ width: `${percent}%` }} />
+                <div className="mt-2 h-2 bg-forest-900/80 overflow-hidden" style={{ clipPath: 'polygon(4px 0%, 100% 0%, calc(100% - 4px) 100%, 0% 100%)' }}>
+                  <div className={`h-full ${barColor} transition-all duration-500`} style={{ width: `${percent}%` }} />
                 </div>
               )}
               {isFull && (
-                <p className="mt-2 text-xs text-red-300">Server is full. New uploads will be rejected until space is freed.</p>
+                <p className="mt-2 text-xs text-earth-400">Server is full. New uploads will be rejected until space is freed.</p>
               )}
             </div>
 
@@ -323,7 +323,7 @@ function ServerStorage({ isAdmin }: { isAdmin: boolean }) {
               </div>
             )}
 
-            {error && <div className="text-sm text-red-300">{error}</div>}
+            {error && <div className="xbox-error">{error}</div>}
           </>
         )}
       </div>

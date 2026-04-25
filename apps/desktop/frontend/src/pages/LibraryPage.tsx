@@ -147,7 +147,7 @@ function LibraryPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-sand-100">My Clips</h1>
+          <h1 className="text-2xl text-sand-100 xbox-title">My Clips</h1>
           <p className="text-sm text-sand-500 mt-1">
             {total} clip{total !== 1 ? 's' : ''}
           </p>
@@ -159,9 +159,9 @@ function LibraryPage() {
       </div>
 
       {error && (
-        <div className="bg-earth-900/40 border border-earth-700/50 text-earth-300 px-4 py-3 rounded-lg text-sm flex items-center justify-between">
+        <div className="xbox-error flex items-center justify-between">
           <span>{error}</span>
-          <button onClick={() => setError(null)} className="text-earth-400 hover:text-earth-300 ml-3 shrink-0">
+          <button onClick={() => setError(null)} className="text-earth-400 hover:text-earth-300 ml-3 shrink-0 transition-colors">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -215,7 +215,7 @@ function LibraryPage() {
       {!loading && filteredClips.length === 0 && (
         <div className="card">
           <div className="card-body text-center py-16">
-            <div className="mx-auto h-16 w-16 rounded-2xl bg-forest-800/50 flex items-center justify-center mb-4">
+            <div className="mx-auto h-16 w-16 rounded-sm bg-forest-900/70 border border-forest-700/40 flex items-center justify-center mb-4">
               <Video className="h-8 w-8 text-forest-500" />
             </div>
             <h3 className="text-lg font-semibold text-sand-200">
@@ -296,13 +296,13 @@ function LibraryPage() {
                         <button
                           onClick={(e) => { e.stopPropagation(); handleDelete(clip.id) }}
                           disabled={deleting === clip.id}
-                          className="px-2 py-1 text-xs font-semibold text-white bg-earth-600 hover:bg-earth-500 rounded transition-colors"
+                          className="btn-danger text-xs px-2 py-1 inline-flex items-center"
                         >
                           {deleting === clip.id ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Delete'}
                         </button>
                         <button
                           onClick={(e) => { e.stopPropagation(); setConfirmingDelete(null) }}
-                          className="p-1 text-sand-500 hover:text-sand-300 rounded transition-colors"
+                          className="p-1 text-sand-500 hover:text-sand-300 transition-colors"
                           title="Cancel"
                         >
                           <X className="h-3.5 w-3.5" />
@@ -311,7 +311,7 @@ function LibraryPage() {
                     ) : (
                       <button
                         onClick={(e) => { e.stopPropagation(); setConfirmingDelete(clip.id) }}
-                        className="p-1.5 text-earth-700 hover:text-earth-500 rounded transition-colors"
+                        className="p-1.5 text-earth-700 hover:text-earth-500 transition-colors"
                         title="Delete"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
@@ -367,13 +367,13 @@ function LibraryPage() {
                       <button
                         onClick={(e) => { e.stopPropagation(); handleDelete(clip.id) }}
                         disabled={deleting === clip.id}
-                        className="px-2.5 py-1.5 text-xs font-semibold text-white bg-earth-600 hover:bg-earth-500 rounded-lg transition-colors"
+                        className="btn-danger text-xs px-2.5 py-1.5 inline-flex items-center"
                       >
                         {deleting === clip.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Delete'}
                       </button>
                       <button
                         onClick={(e) => { e.stopPropagation(); setConfirmingDelete(null) }}
-                        className="p-2 text-sand-500 hover:text-sand-300 rounded-lg transition-colors"
+                        className="p-2 text-sand-500 hover:text-sand-300 transition-colors"
                         title="Cancel"
                       >
                         <X className="h-4 w-4" />
@@ -382,7 +382,7 @@ function LibraryPage() {
                   ) : (
                     <button
                       onClick={(e) => { e.stopPropagation(); setConfirmingDelete(clip.id) }}
-                      className="p-2 text-earth-700 hover:text-earth-500 rounded-lg transition-colors"
+                      className="p-2 text-earth-700 hover:text-earth-500 transition-colors"
                       title="Delete"
                     >
                       <Trash2 className="h-4 w-4" />
@@ -418,15 +418,15 @@ function LibraryPage() {
       )}
 
       {shareClipId && (
-        <div className="fixed inset-0 bg-forest-950/70 flex items-center justify-center z-50" onClick={handleCloseShares}>
-          <div className="bg-forest-950 border border-forest-800/60 rounded-xl w-full max-w-md mx-4 shadow-xl" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-5 py-4 border-b border-forest-800/60">
-              <h3 className="text-base font-semibold text-sand-200">Share Links</h3>
-              <button onClick={handleCloseShares} className="p-1 text-sand-500 hover:text-sand-300 rounded transition-colors">
+        <div className="fixed inset-0 bg-forest-950/80 flex items-center justify-center z-50" onClick={handleCloseShares}>
+          <div className="card w-full max-w-md mx-4" style={{ boxShadow: '0 0 40px rgba(0,0,0,0.6), 0 0 20px rgba(82,176,67,0.1)' }} onClick={e => e.stopPropagation()}>
+            <div className="section-header flex items-center justify-between">
+              <h3 className="nav-font font-bold uppercase tracking-wider text-sand-200 text-sm">Share Links</h3>
+              <button onClick={handleCloseShares} className="p-1 text-sand-500 hover:text-sand-300 transition-colors">
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <div className="p-5 space-y-4">
+            <div className="p-5 space-y-3">
               <button onClick={handleCreateShare} className="btn-primary w-full inline-flex items-center justify-center space-x-2">
                 <Share2 className="h-4 w-4" />
                 <span>Create New Share Link</span>
@@ -437,11 +437,11 @@ function LibraryPage() {
               )}
 
               {shares.map(s => (
-                <div key={s.share_code} className="flex items-center space-x-2 p-2.5 bg-forest-900/50 rounded-lg">
-                  <code className="text-sm text-forest-300 flex-1 truncate">{s.share_url}</code>
+                <div key={s.share_code} className="flex items-center space-x-2 p-2.5 bg-forest-900/40 border border-forest-800/40 border-l-forest-600/40" style={{ borderLeftWidth: '2px' }}>
+                  <code className="text-xs text-forest-300 flex-1 truncate">{s.share_url}</code>
                   <button
                     onClick={() => handleCopyShareUrl(s.share_url)}
-                    className="p-1.5 text-sand-500 hover:text-sand-300 rounded transition-colors shrink-0"
+                    className="p-1.5 text-sand-500 hover:text-sand-300 transition-colors shrink-0"
                     title="Copy link"
                   >
                     {copiedShareUrl === s.share_url ? <Check className="h-3.5 w-3.5 text-moss-400" /> : <Copy className="h-3.5 w-3.5" />}

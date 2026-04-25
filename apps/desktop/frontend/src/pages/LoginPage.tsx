@@ -62,10 +62,13 @@ function LoginPage() {
     <div className="min-h-screen bg-forest-950 flex items-center justify-center">
       <div className="w-full max-w-sm px-6">
         <div className="text-center mb-8">
-          <div className="mx-auto h-14 w-14 rounded-2xl bg-forest-600 flex items-center justify-center mb-4">
-            <Video className="h-7 w-7 text-forest-50" />
+          <div
+            className="mx-auto h-14 w-14 rounded-sm bg-forest-900/70 border border-forest-600/50 flex items-center justify-center mb-4"
+            style={{ boxShadow: '0 0 20px rgba(82, 176, 67, 0.25)' }}
+          >
+            <Video className="h-7 w-7 text-forest-400" />
           </div>
-          <h1 className="text-2xl font-bold text-sand-100 tracking-tight">ClipShare</h1>
+          <h1 className="text-3xl text-sand-100 xbox-title">ClipShare</h1>
           <p className="mt-2 text-sand-500 text-sm">
             {mode === 'setup' && 'First-time admin setup'}
             {mode === 'login' && 'Sign in as the admin'}
@@ -77,12 +80,12 @@ function LoginPage() {
         <div className="grid grid-cols-2 gap-2 mb-4">
           <button
             type="button"
-            className={`px-3 py-2 rounded-lg text-sm ${mode === 'login' ? 'bg-forest-700 text-sand-100' : 'bg-forest-900 text-sand-400 hover:text-sand-200'}`}
+            className={`xbox-tab ${mode === 'login' ? 'xbox-tab-active' : 'xbox-tab-inactive'}`}
             onClick={() => setMode('login')}
           >Admin login</button>
           <button
             type="button"
-            className={`px-3 py-2 rounded-lg text-sm ${mode === 'redeem' ? 'bg-forest-700 text-sand-100' : 'bg-forest-900 text-sand-400 hover:text-sand-200'}`}
+            className={`xbox-tab ${mode === 'redeem' ? 'xbox-tab-active' : 'xbox-tab-inactive'}`}
             onClick={() => setMode('redeem')}
           >Invite code</button>
         </div>
@@ -154,13 +157,13 @@ function LoginPage() {
             )}
 
             {needsSetupHint && (
-              <div className="text-xs px-3 py-2 rounded-lg bg-forest-900/70 text-forest-300">
+              <div className="xbox-info text-xs">
                 This server hasn&apos;t been set up yet. <button type="button" className="underline" onClick={() => setMode('setup')}>Run setup</button> first.
               </div>
             )}
 
             {error && (
-              <div className="text-sm text-center px-3 py-2 rounded-lg bg-red-900/30 text-red-300">
+              <div className="xbox-error text-center">
                 {error}
               </div>
             )}

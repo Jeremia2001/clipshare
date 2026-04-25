@@ -764,11 +764,11 @@ function EditorPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-sand-100">Clip Editor</h1>
+          <h1 className="text-2xl text-sand-100 xbox-title">Clip Editor</h1>
           <p className="text-sm text-sand-500 mt-1">Trim and edit locally, then upload to share</p>
         </div>
         {step !== 'select' && (
-          <button onClick={reset} className="btn-ghost inline-flex items-center space-x-2 text-sm">
+          <button onClick={reset} className="btn-cancel inline-flex items-center space-x-2">
             <X className="h-4 w-4" />
             <span>New Clip</span>
           </button>
@@ -787,7 +787,7 @@ function EditorPage() {
             className="card-body text-center py-16 border-2 border-dashed border-forest-700/60 rounded-xl hover:border-forest-600/80 transition-colors cursor-pointer"
             onClick={handleSelectFile}
           >
-            <div className="mx-auto h-16 w-16 rounded-2xl bg-forest-800/50 flex items-center justify-center mb-4">
+            <div className="mx-auto h-16 w-16 rounded-sm bg-forest-900/70 border border-forest-700/40 flex items-center justify-center mb-4">
               <Film className="h-8 w-8 text-forest-400" />
             </div>
             <h3 className="text-lg font-semibold text-sand-200">Select a video to edit</h3>
@@ -805,7 +805,7 @@ function EditorPage() {
                 {ffmpegInstalling ? (
                   <div className="space-y-1">
                     <p className="text-xs text-sand-400">{ffmpegInstallStage}</p>
-                    <div className="w-48 mx-auto h-1.5 bg-stone-700 rounded-full overflow-hidden">
+                    <div className="w-48 mx-auto h-1.5 bg-forest-900 overflow-hidden" style={{ clipPath: 'polygon(4px 0%, 100% 0%, calc(100% - 4px) 100%, 0% 100%)' }}>
                       <div
                         className="h-full bg-forest-500 transition-all duration-300"
                         style={{ width: `${ffmpegInstallPct}%` }}
@@ -855,9 +855,9 @@ function EditorPage() {
             </div>
             <div className="card-body space-y-4">
               {!ffmpegAvailable && !ffmpegInstalling && (
-                <div className="bg-earth-900/30 border border-earth-700/40 rounded-lg px-3 py-2 flex items-center justify-between">
+                <div className="xbox-error flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-earth-300">FFmpeg required for trimming</p>
+                    <p className="text-sm">FFmpeg required for trimming</p>
                     {ffmpegInstallError && <p className="text-xs text-earth-400 mt-0.5">{ffmpegInstallError}</p>}
                   </div>
                   <button className="btn-secondary text-xs px-3 py-1.5" onClick={handleInstallFFmpeg}>
@@ -866,9 +866,9 @@ function EditorPage() {
                 </div>
               )}
               {ffmpegInstalling && (
-                <div className="bg-forest-900/60 border border-forest-700/40 rounded-lg px-3 py-2 space-y-1">
+                <div className="xbox-info space-y-1">
                   <p className="text-sm text-sand-300">{ffmpegInstallStage}</p>
-                  <div className="h-1.5 bg-stone-700 rounded-full overflow-hidden">
+                  <div className="h-1.5 bg-forest-900 overflow-hidden" style={{ clipPath: 'polygon(4px 0%, 100% 0%, calc(100% - 4px) 100%, 0% 100%)' }}>
                     <div className="h-full bg-forest-500 transition-all duration-300" style={{ width: `${ffmpegInstallPct}%` }} />
                   </div>
                 </div>
@@ -943,7 +943,7 @@ function EditorPage() {
               {processing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
               <span>{processing ? 'Processing...' : 'Upload & Save'}</span>
             </button>
-            <button onClick={() => { abortRef.current = true; reset() }} className="btn-ghost inline-flex items-center space-x-2 text-earth-500 hover:text-earth-400">
+            <button onClick={() => { abortRef.current = true; reset() }} className="btn-cancel inline-flex items-center space-x-2 text-earth-500 hover:text-earth-400">
               <X className="h-4 w-4" />
               <span>Cancel</span>
             </button>
@@ -976,11 +976,11 @@ function EditorPage() {
           <div className="card max-w-md w-full mx-4">
             <div className="card-body space-y-4">
               <div className="flex items-center space-x-3">
-                <div className="h-10 w-10 rounded-xl bg-earth-900/50 flex items-center justify-center flex-shrink-0">
+                <div className="h-10 w-10 rounded-sm bg-earth-900/50 border border-earth-700/40 flex items-center justify-center flex-shrink-0">
                   <Trash2 className="h-5 w-5 text-earth-400" />
                 </div>
                 <div>
-                  <h3 className="font-semibold text-sand-100">Delete source video?</h3>
+                  <h3 className="nav-font font-bold uppercase tracking-wide text-sand-100">Delete source video?</h3>
                   <p className="text-sm text-sand-500">Clip uploaded successfully</p>
                 </div>
               </div>
@@ -992,7 +992,7 @@ function EditorPage() {
                   <Trash2 className="h-4 w-4" />
                   <span>Delete from PC</span>
                 </button>
-                <button onClick={handleSkipDelete} className="btn-ghost">
+                <button onClick={handleSkipDelete} className="btn-cancel">
                   Keep file
                 </button>
               </div>

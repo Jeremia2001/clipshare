@@ -159,7 +159,7 @@ function ClipDetailPage() {
           <ArrowLeft className="h-5 w-5" />
         </button>
         <div className="flex-1 min-w-0">
-          <h1 className="text-2xl font-bold text-sand-100 truncate">{clip.title}</h1>
+          <h1 className="text-2xl text-sand-100 xbox-title truncate">{clip.title}</h1>
           <div className="flex items-center space-x-3 mt-1 text-sm text-sand-500">
             <span className="flex items-center space-x-1"><Eye className="h-3.5 w-3.5" /><span>{clip.view_count} views</span></span>
             <span className="flex items-center space-x-1"><Clock className="h-3.5 w-3.5" /><span>{new Date(clip.created_at).toLocaleDateString()}</span></span>
@@ -188,7 +188,7 @@ function ClipDetailPage() {
                 </div>
               )}
               {videoError && viewUrl && (
-                <div className="bg-earth-900/40 border border-earth-700/50 text-earth-300 px-4 py-3 rounded-b-lg text-sm">
+                <div className="xbox-error rounded-none">
                   {videoError}
                 </div>
               )}
@@ -282,8 +282,8 @@ function ClipDetailPage() {
                 <ul className="space-y-3">
                   {comments.map(comment => (
                     <li key={comment.id} className="flex items-start space-x-3">
-                      <div className="mt-0.5 h-8 w-8 rounded-full bg-forest-800 flex items-center justify-center shrink-0">
-                        <User className="h-4 w-4 text-sand-400" />
+                      <div className="mt-0.5 h-8 w-8 rounded-sm bg-forest-900/70 border border-forest-700/40 flex items-center justify-center shrink-0">
+                        <User className="h-4 w-4 text-sand-500" />
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-baseline space-x-2">
@@ -317,7 +317,7 @@ function ClipDetailPage() {
                   {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
                   <span>{deleting ? 'Deleting...' : 'Confirm Delete'}</span>
                 </button>
-                <button onClick={() => setConfirmingDelete(false)} className="btn-ghost text-sm">
+                <button onClick={() => setConfirmingDelete(false)} className="btn-cancel">
                   Cancel
                 </button>
               </>
@@ -350,10 +350,10 @@ function ClipDetailPage() {
               )}
 
               {shares.map(s => (
-                <div key={s.share_code} className="flex items-center space-x-2 p-2 bg-forest-900/50 rounded-lg">
+                <div key={s.share_code} className="flex items-center space-x-2 p-2 bg-forest-900/40 border border-forest-800/40 border-l-forest-600/40" style={{ borderLeftWidth: '2px' }}>
                   <code className="text-xs text-forest-300 flex-1 truncate">{s.share_url}</code>
                   {s.share.has_password && <Lock className="h-3 w-3 text-earth-500 shrink-0" />}
-                  <button onClick={() => handleCopyCode(s.share_url)} className="p-1 text-sand-500 hover:text-sand-300 shrink-0" title="Copy link">
+                  <button onClick={() => handleCopyCode(s.share_url)} className="p-1 text-sand-500 hover:text-sand-300 shrink-0 transition-colors" title="Copy link">
                     {copiedCode === s.share_url ? <Check className="h-3 w-3 text-moss-400" /> : <Copy className="h-3 w-3" />}
                   </button>
                 </div>
