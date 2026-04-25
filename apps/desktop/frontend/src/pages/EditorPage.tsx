@@ -3,14 +3,14 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import {
   Upload, Film, Scissors, Globe,
-  MessageSquare, X, Loader2,
+  MessageSquare, X, Loader2, Trash2,
   Play, Pause, SkipBack, SkipForward, FolderOpen,
   ChevronLeft, ChevronRight, ArrowRightFromLine, ArrowLeftFromLine
 } from 'lucide-react'
 import { clipApi } from '../services/api'
 import {
   FFmpegIsAvailable, InstallFFmpeg, GetMediaServerURL,
-  OpenFileDialog, ProbeVideo, TrimVideo, ServeLocalFile, CleanupServe, UploadFile
+  OpenFileDialog, ProbeVideo, TrimVideo, ServeLocalFile, CleanupServe, UploadFile, DeleteFile
 } from '../../wailsjs/go/main/App'
 import { EventsOn, EventsOff } from '../../wailsjs/runtime/runtime'
 
@@ -539,6 +539,9 @@ function EditorPage() {
   const [ffmpegInstallError, setFfmpegInstallError] = useState('')
   const [processing, setProcessing] = useState(false)
   const [processingProgress, setProcessingProgress] = useState('')
+  const [showDeleteSourceDialog, setShowDeleteSourceDialog] = useState(false)
+  const [pendingClipId, setPendingClipId] = useState<string | null>(null)
+  const [autoDeleteSource, setAutoDeleteSource] = useState(() => localStorage.getItem('autoDeleteSource') === 'true')
   const abortRef = useRef(false)
 
   useEffect(() => {
@@ -705,12 +708,31 @@ function EditorPage() {
         trim_end_seconds: trimEnd,
       })
 
-      navigate(`/clips/${clipId}`)
+      if (autoDeleteSource) {
+        try { await DeleteFile(selectedFilePath) } catch (e) { console.error('[EditorPage] Auto-delete failed:', e) }
+        navigate(`/clips/${clipId}`)
+      } else {
+        setPendingClipId(clipId)
+        setShowDeleteSourceDialog(true)
+      }
     } catch (err: any) {
       console.error('[EditorPage] Finalize error:', err)
       setError(err.response?.data?.error || err.message || 'Finalize failed')
       setStep('editing')
     }
+  }
+
+  const handleDeleteSource = async () => {
+    try {
+      await DeleteFile(selectedFilePath)
+    } catch (e) {
+      console.error('[EditorPage] Failed to delete source file:', e)
+    }
+    navigate(`/clips/${pendingClipId}`)
+  }
+
+  const handleSkipDelete = () => {
+    navigate(`/clips/${pendingClipId}`)
   }
 
   const reset = () => {
@@ -891,6 +913,19 @@ function EditorPage() {
                   <MessageSquare className="h-4 w-4 text-sand-500" />
                   <span className="text-sm text-sand-300">Allow Comments</span>
                 </label>
+                <label className="flex items-center space-x-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={autoDeleteSource}
+                    onChange={(e) => {
+                      setAutoDeleteSource(e.target.checked)
+                      localStorage.setItem('autoDeleteSource', String(e.target.checked))
+                    }}
+                    className="h-4 w-4 rounded border-forest-700 bg-forest-950 text-forest-500 focus:ring-forest-500"
+                  />
+                  <Trash2 className="h-4 w-4 text-sand-500" />
+                  <span className="text-sm text-sand-300">Auto-delete source</span>
+                </label>
               </div>
               {selectedFilePath && (
                 <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm text-sand-500">
@@ -932,6 +967,36 @@ function EditorPage() {
             <h3 className="text-lg font-semibold text-sand-200">Uploading...</h3>
             <p className="text-sm text-sand-500 mt-2">{fileName}</p>
             <p className="text-xs text-sand-600 mt-1">You will be redirected automatically</p>
+          </div>
+        </div>
+      )}
+
+      {showDeleteSourceDialog && pendingClipId && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="card max-w-md w-full mx-4">
+            <div className="card-body space-y-4">
+              <div className="flex items-center space-x-3">
+                <div className="h-10 w-10 rounded-xl bg-earth-900/50 flex items-center justify-center flex-shrink-0">
+                  <Trash2 className="h-5 w-5 text-earth-400" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-sand-100">Delete source video?</h3>
+                  <p className="text-sm text-sand-500">Clip uploaded successfully</p>
+                </div>
+              </div>
+              <p className="text-sm text-sand-400">
+                Remove <span className="text-sand-200 font-medium">{fileName}</span> from your PC? The clip is safely stored on the server.
+              </p>
+              <div className="flex items-center space-x-3 pt-1">
+                <button onClick={handleDeleteSource} className="btn-danger inline-flex items-center space-x-2">
+                  <Trash2 className="h-4 w-4" />
+                  <span>Delete from PC</span>
+                </button>
+                <button onClick={handleSkipDelete} className="btn-ghost">
+                  Keep file
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

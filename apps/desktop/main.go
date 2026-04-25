@@ -18,6 +18,7 @@ import (
 	goruntime "runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	clientauth "clipshare-desktop/internal/auth"
@@ -49,6 +50,7 @@ type App struct {
 	mediaDir        string
 	mediaMu         sync.RWMutex
 	mediaMap        map[string]mediaEntry
+	mediaSeq        int64 // monotonic counter; never resets so IDs are always unique
 	streamMu        sync.Mutex
 	streamMap       map[string]streamEntry
 	streamCounter   int
@@ -86,12 +88,6 @@ func (a *App) mediaDel(name string) (mediaEntry, bool) {
 	return e, ok
 }
 
-func (a *App) mediaLen() int {
-	a.mediaMu.RLock()
-	n := len(a.mediaMap)
-	a.mediaMu.RUnlock()
-	return n
-}
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
@@ -565,8 +561,8 @@ func (a *App) TrimVideoFast(req TrimRequest) (string, error) {
 }
 
 func (a *App) trimVideo(req TrimRequest, fastPreview bool) (string, error) {
-	id := fmt.Sprintf("trim-%d", a.mediaLen())
-	outputPath := filepath.Join(a.mediaDir, id+".mp4")
+	id := mediaName("trim", atomic.AddInt64(&a.mediaSeq, 1), req.InputPath, ".mp4")
+	outputPath := filepath.Join(a.mediaDir, id)
 
 	probeResult, probeErr := ffmpeg.Probe(a.ctx, req.InputPath)
 
@@ -595,7 +591,7 @@ func (a *App) trimVideo(req TrimRequest, fastPreview bool) (string, error) {
 		canStreamCopy := probeErr == nil && ffmpeg.CanStreamCopy(probeResult, req.InputPath)
 		if canStreamCopy {
 			if err := ffmpeg.TrimWithProgress(a.ctx, makeOpts(true, w, h), duration, nil); err == nil {
-				serveName := id + ".mp4"
+				serveName := id
 				a.mediaSet(serveName, outputPath, true)
 				return serveName, nil
 			}
@@ -604,7 +600,7 @@ func (a *App) trimVideo(req TrimRequest, fastPreview bool) (string, error) {
 		// Fallback: re-encode for preview
 		err := ffmpeg.TrimWithProgress(a.ctx, makeOpts(false, w, h), duration, nil)
 		if err == nil {
-			serveName := id + ".mp4"
+			serveName := id
 			a.mediaSet(serveName, outputPath, true)
 			return serveName, nil
 		}
@@ -615,7 +611,7 @@ func (a *App) trimVideo(req TrimRequest, fastPreview bool) (string, error) {
 	// For final export: always re-encode to produce a web-friendly file size.
 	err := ffmpeg.TrimWithProgress(a.ctx, makeOpts(false, w, h), duration, nil)
 	if err == nil {
-		serveName := id + ".mp4"
+		serveName := id
 		a.mediaSet(serveName, outputPath, true)
 		return serveName, nil
 	}
@@ -630,7 +626,7 @@ func (a *App) trimVideo(req TrimRequest, fastPreview bool) (string, error) {
 		if isH264 && isMP4 {
 			errSc := ffmpeg.TrimWithProgress(a.ctx, makeOpts(true, 0, 0), duration, nil)
 			if errSc == nil {
-				serveName := id + ".mp4"
+				serveName := id
 				a.mediaSet(serveName, outputPath, true)
 				return serveName, nil
 			}
@@ -681,11 +677,37 @@ func (a *App) ServeLocalFile(filePath string) (string, error) {
 		return "", fmt.Errorf("file not found: %w", err)
 	}
 
-	ext := strings.ToLower(filepath.Ext(absPath))
-	id := fmt.Sprintf("src-%d%s", a.mediaLen(), ext)
+	id := mediaName("src", atomic.AddInt64(&a.mediaSeq, 1), absPath, "")
 	// Store the original path directly — no copy, no symlink.
 	a.mediaSet(id, absPath, false) // not deletable: user's original file
 	return id, nil
+}
+
+// mediaName builds a unique, human-readable serve name from a source file path.
+// Format: <prefix>-<seq>-<sanitized-basename>.<ext>
+// Sanitization: keep alphanumerics, dots, hyphens, underscores; replace everything else with "_".
+func mediaName(prefix string, seq int64, sourcePath, forceExt string) string {
+	base := filepath.Base(sourcePath)
+	ext := forceExt
+	if ext == "" {
+		ext = strings.ToLower(filepath.Ext(base))
+		base = base[:len(base)-len(filepath.Ext(base))]
+	} else {
+		base = base[:len(base)-len(filepath.Ext(base))]
+	}
+	var sb strings.Builder
+	for _, r := range base {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' || r == '.' {
+			sb.WriteRune(r)
+		} else {
+			sb.WriteRune('_')
+		}
+	}
+	sanitized := sb.String()
+	if sanitized == "" {
+		sanitized = "clip"
+	}
+	return fmt.Sprintf("%s-%d-%s%s", prefix, seq, sanitized, ext)
 }
 
 func (a *App) CleanupServe(name string) error {
@@ -693,6 +715,10 @@ func (a *App) CleanupServe(name string) error {
 		return os.Remove(e.path)
 	}
 	return nil
+}
+
+func (a *App) DeleteFile(path string) error {
+	return os.Remove(path)
 }
 
 // ProxyVideoURL registers a remote video URL (with optional bearer token) in the
