@@ -1,6 +1,9 @@
 # Compose reads a sibling .env file automatically. Copy .env.example to .env
 # and edit it before running `docker compose up`. For a dev-only stack the
 # defaults below work without any .env at all.
+#
+# Local dev (rustfs):  docker compose --profile local up
+# Production (OVH S3): docker compose up   (set RUSTFS_* vars in .env)
 
 services:
   postgres:
@@ -22,6 +25,7 @@ services:
       retries: 5
 
   rustfs:
+    profiles: [local]
     image: rustfs/rustfs:latest
     environment:
       RUSTFS_ROOT_USER: ${RUSTFS_ACCESS_KEY:-clipshare}
@@ -58,7 +62,7 @@ services:
       DB_NAME: ${DB_NAME:-clipshare}
       DB_SSLMODE: disable
 
-      RUSTFS_ENDPOINT: rustfs:9000
+      RUSTFS_ENDPOINT: ${RUSTFS_ENDPOINT:-rustfs:9000}
       RUSTFS_PUBLIC_ENDPOINT: ${RUSTFS_PUBLIC_ENDPOINT:-}
       RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-clipshare}
       RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:-clipshare123}
@@ -69,8 +73,6 @@ services:
       REFRESH_TOKEN_EXPIRY: ${REFRESH_TOKEN_EXPIRY:-168h}
     depends_on:
       postgres:
-        condition: service_healthy
-      rustfs:
         condition: service_healthy
     ports:
       - "8080:8080"
