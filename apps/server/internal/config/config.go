@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"time"
@@ -103,14 +104,14 @@ func (c *Config) Validate() error {
 }
 
 func (c *Config) DatabaseURL() string {
-	return fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=%s",
-		c.Database.User,
-		c.Database.Password,
-		c.Database.Host,
-		c.Database.Port,
-		c.Database.Database,
-		c.Database.SSLMode,
-	)
+	u := &url.URL{
+		Scheme: "postgres",
+		User:   url.UserPassword(c.Database.User, c.Database.Password),
+		Host:   fmt.Sprintf("%s:%d", c.Database.Host, c.Database.Port),
+		Path:   c.Database.Database,
+		RawQuery: url.Values{"sslmode": {c.Database.SSLMode}}.Encode(),
+	}
+	return u.String()
 }
 
 func getEnv(key, defaultValue string) string {
