@@ -330,6 +330,13 @@ func (s *ClipService) DeleteClip(ctx context.Context, clipID, userID uuid.UUID) 
 		log.Printf("[DeleteClip] failed to delete object %s/%s: %v", clip.RustfsBucket, clip.RustfsObjectKey, err)
 	}
 
+	if clip.ThumbnailKey != nil && *clip.ThumbnailKey != "" {
+		_, thumbnailBucket := s.rustfs.BucketNames()
+		if err := s.rustfs.DeleteObject(ctx, thumbnailBucket, *clip.ThumbnailKey); err != nil {
+			log.Printf("[DeleteClip] failed to delete thumbnail %s/%s: %v", thumbnailBucket, *clip.ThumbnailKey, err)
+		}
+	}
+
 	if err := s.clipRepo.Delete(ctx, clipID); err != nil {
 		return err
 	}
