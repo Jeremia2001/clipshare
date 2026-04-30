@@ -16,7 +16,6 @@ type RustFSClient struct {
 	buckets struct {
 		Clips      string
 		Thumbnails string
-		Processed  string
 	}
 	endpoint       string
 	publicEndpoint string
@@ -26,7 +25,6 @@ type RustFSClient struct {
 func NewRustFSClient(endpoint, accessKey, secretKey string, useSSL bool, publicEndpoint string, bucketConfig struct {
 	Clips      string
 	Thumbnails string
-	Processed  string
 }) (*RustFSClient, error) {
 	client, err := minio.New(endpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(accessKey, secretKey, ""),
@@ -44,11 +42,9 @@ func NewRustFSClient(endpoint, accessKey, secretKey string, useSSL bool, publicE
 	}
 	r.buckets.Clips = bucketConfig.Clips
 	r.buckets.Thumbnails = bucketConfig.Thumbnails
-	r.buckets.Processed = bucketConfig.Processed
 
-	// Ensure buckets exist
 	ctx := context.Background()
-	for _, bucket := range []string{r.buckets.Clips, r.buckets.Thumbnails, r.buckets.Processed} {
+	for _, bucket := range []string{r.buckets.Clips, r.buckets.Thumbnails} {
 		exists, err := client.BucketExists(ctx, bucket)
 		if err != nil {
 			return nil, fmt.Errorf("failed to check bucket %s: %w", bucket, err)
@@ -134,6 +130,6 @@ func (r *RustFSClient) GetObjectRange(ctx context.Context, bucket, objectKey str
 	return obj, nil
 }
 
-func (r *RustFSClient) BucketNames() (clips, thumbnails, processed string) {
-	return r.buckets.Clips, r.buckets.Thumbnails, r.buckets.Processed
+func (r *RustFSClient) BucketNames() (clips, thumbnails string) {
+	return r.buckets.Clips, r.buckets.Thumbnails
 }

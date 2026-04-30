@@ -44,7 +44,6 @@ type RustFSConfig struct {
 type BucketConfig struct {
 	Clips      string
 	Thumbnails string
-	Processed  string
 }
 
 type AuthConfig struct {
@@ -77,9 +76,8 @@ func Load() (*Config, error) {
 			SecretKey:      getEnv("RUSTFS_SECRET_KEY", "clipshare123"),
 			UseSSL:         getEnvAsBool("RUSTFS_USE_SSL", false),
 			Buckets: BucketConfig{
-				Clips:      getEnv("RUSTFS_BUCKET_CLIPS", "clips-raw"),
+				Clips:      getEnv("RUSTFS_BUCKET_CLIPS", "clips"),
 				Thumbnails: getEnv("RUSTFS_BUCKET_THUMBNAILS", "thumbnails"),
-				Processed:  getEnv("RUSTFS_BUCKET_PROCESSED", "clips-processed"),
 			},
 		},
 		Auth: AuthConfig{

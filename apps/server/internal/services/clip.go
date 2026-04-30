@@ -86,7 +86,8 @@ func (s *ClipService) CreateClipRecord(ctx context.Context, clip *models.Clip) (
 }
 
 func (s *ClipService) UploadToStorage(ctx context.Context, objectKey string, reader io.Reader, size int64, contentType string) error {
-	return s.rustfs.PutObject(ctx, "clips-raw", objectKey, reader, size, contentType)
+	clipsBucket, _ := s.rustfs.BucketNames()
+	return s.rustfs.PutObject(ctx, clipsBucket, objectKey, reader, size, contentType)
 }
 
 func (s *ClipService) FinalizeUpload(ctx context.Context, clipID, userID uuid.UUID, req CreateClipRequest) (*models.Clip, error) {
@@ -272,7 +273,7 @@ func (s *ClipService) UploadThumbnail(ctx context.Context, clipID, userID uuid.U
 		return fmt.Errorf("not authorized")
 	}
 
-	_, thumbnailBucket, _ := s.rustfs.BucketNames()
+	_, thumbnailBucket := s.rustfs.BucketNames()
 	objectKey := fmt.Sprintf("thumbnails/%s.jpg", clipID.String())
 
 	if err := s.rustfs.PutObject(ctx, thumbnailBucket, objectKey, reader, size, contentType); err != nil {
@@ -296,7 +297,7 @@ func (s *ClipService) StreamThumbnail(ctx context.Context, clipID uuid.UUID) (io
 		return nil, 0, "", fmt.Errorf("no thumbnail")
 	}
 
-	_, thumbnailBucket, _ := s.rustfs.BucketNames()
+	_, thumbnailBucket := s.rustfs.BucketNames()
 	info, err := s.rustfs.StatObject(ctx, thumbnailBucket, *clip.ThumbnailKey)
 	if err != nil {
 		return nil, 0, "", fmt.Errorf("thumbnail not found: %w", err)

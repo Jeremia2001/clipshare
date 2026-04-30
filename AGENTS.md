@@ -198,10 +198,9 @@ All config is via environment variables. See `.env.example` for the full list. K
 
 ## Storage Architecture
 
-RustFS uses three S3 buckets:
-- `clips-raw` — Original uploaded clips
+RustFS uses two S3 buckets:
+- `clips` — Original uploaded clips
 - `thumbnails` — Generated thumbnails
-- `clips-processed` — Transcoded/processed clips
 
 The `storage/rustfs.go` client uses the MinIO Go SDK (which is S3-compatible) to communicate with RustFS.
 

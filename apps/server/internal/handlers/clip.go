@@ -114,7 +114,7 @@ func (h *ClipHandler) UploadFile(c *fiber.Ctx) error {
 		contentType = "video/mp4"
 	}
 
-	log.Printf("[UploadFile] Uploading to RustFS: bucket=clips-raw, key=%s, size=%d, contentType=%s", objectKey, file.Size, contentType)
+	log.Printf("[UploadFile] Uploading to RustFS: bucket=clips, key=%s, size=%d, contentType=%s", objectKey, file.Size, contentType)
 
 	if err := h.clipService.UploadToStorage(c.Context(), objectKey, f, file.Size, contentType); err != nil {
 		log.Printf("[UploadFile] RustFS upload failed: %v", err)
@@ -128,7 +128,7 @@ func (h *ClipHandler) UploadFile(c *fiber.Ctx) error {
 	clip := &models.Clip{
 		UserID:           userID,
 		Title:            file.Filename,
-		RustfsBucket:     "clips-raw",
+		RustfsBucket:     "clips",
 		RustfsObjectKey:  objectKey,
 		OriginalFilename: file.Filename,
 		FileSizeBytes:    file.Size,
