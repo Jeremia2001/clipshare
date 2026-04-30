@@ -2,8 +2,10 @@ package handlers
 
 import (
 	"errors"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/limiter"
 	"github.com/google/uuid"
 
 	"clipshare/internal/middleware"
@@ -19,11 +21,21 @@ func NewAuthHandler(authService *services.AuthService) *AuthHandler {
 }
 
 func (h *AuthHandler) RegisterRoutes(r fiber.Router) {
+	authLimiter := limiter.New(limiter.Config{
+		Max:        10,
+		Expiration: 1 * time.Minute,
+		LimitReached: func(c *fiber.Ctx) error {
+			return c.Status(fiber.StatusTooManyRequests).JSON(fiber.Map{
+				"error": "Too many attempts. Try again in a minute.",
+			})
+		},
+	})
+
 	g := r.Group("/auth")
 	g.Get("/status", h.Status)
-	g.Post("/setup", h.SetupAdmin)
-	g.Post("/login", h.AdminLogin)
-	g.Post("/redeem", h.RedeemInvite)
+	g.Post("/setup", authLimiter, h.SetupAdmin)
+	g.Post("/login", authLimiter, h.AdminLogin)
+	g.Post("/redeem", authLimiter, h.RedeemInvite)
 	g.Get("/me", h.GetCurrentUser)
 	g.Delete("/logout", h.Logout)
 

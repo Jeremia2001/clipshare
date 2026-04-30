@@ -81,6 +81,7 @@ func selectEncoder() encoderConfig {
 		// the exact pixel format we'll use during actual encoding.
 		args := []string{"-f", "lavfi", "-i", "nullsrc=s=320x240:d=0.04", "-frames:v", "1", "-c:v", enc.name, "-pix_fmt", "yuv420p", "-f", "null", "-"}
 		cmd := exec.CommandContext(ctx, bin, args...)
+		hideConsole(cmd)
 		if cmd.Run() == nil {
 			e := enc
 			encCached = &e
@@ -210,6 +211,7 @@ func Probe(ctx context.Context, inputPath string) (*ProbeResult, error) {
 		"-show_streams",
 		inputPath,
 	)
+	hideConsole(cmd)
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("ffprobe failed: %w", err)
@@ -346,6 +348,7 @@ func Trim(ctx context.Context, opts TrimOptions) error {
 func trimEncode(ctx context.Context, bin string, opts TrimOptions, enc encoderConfig) error {
 	args := trimArgs(opts, enc, false)
 	cmd := exec.CommandContext(ctx, bin, args...)
+	hideConsole(cmd)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
@@ -384,6 +387,7 @@ func Thumbnail(ctx context.Context, opts ThumbnailOptions) error {
 
 func cmdRun(ctx context.Context, bin string, args []string) error {
 	cmd := exec.CommandContext(ctx, bin, args...)
+	hideConsole(cmd)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
@@ -424,6 +428,7 @@ func trimWithProgressEncoder(ctx context.Context, bin string, opts TrimOptions, 
 	args := trimArgs(opts, enc, true)
 
 	cmd := exec.CommandContext(ctx, bin, args...)
+	hideConsole(cmd)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return trimEncode(ctx, bin, opts, enc)

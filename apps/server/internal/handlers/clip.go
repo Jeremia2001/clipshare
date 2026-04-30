@@ -694,14 +694,12 @@ func (h *ClipHandler) StreamSharedClip(c *fiber.Ctx) error {
 		password = &pw
 	}
 
-	share, clip, err := h.clipService.ValidateShareAccess(c.Context(), code, password)
+	_, clip, err := h.clipService.ValidateShareAccess(c.Context(), code, password)
 	if err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 			"error": err.Error(),
 		})
 	}
-
-	h.clipService.IncrementShareViewCounts(c.Context(), clip.ID, share.ID)
 
 	size := clip.FileSizeBytes
 	contentType := services.ClipContentType(clip.OriginalFilename)

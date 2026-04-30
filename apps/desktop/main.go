@@ -342,6 +342,33 @@ func (a *App) GetAuthStatus() (*AuthStatus, error) {
 	return status, nil
 }
 
+// ProbeServer checks if a given URL hosts a ClipShare server and returns its
+// auth status without persisting the URL to config.
+func (a *App) ProbeServer(serverURL string) (*AuthStatus, error) {
+	serverURL = strings.TrimRight(serverURL, "/")
+	status := &AuthStatus{ServerURL: serverURL}
+	req, err := http.NewRequest("GET", serverURL+"/api/v1/auth/status", nil)
+	if err != nil {
+		return status, nil
+	}
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return status, nil
+	}
+	defer resp.Body.Close()
+	status.Reachable = true
+	if resp.StatusCode == http.StatusOK {
+		var body struct {
+			NeedsSetup bool `json:"needs_setup"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&body); err == nil {
+			status.NeedsSetup = body.NeedsSetup
+		}
+	}
+	return status, nil
+}
+
 // SetupAdmin runs the first-time admin bootstrap using the setup token.
 // Stores the resulting JWT access token in the keyring so the admin can make
 // authenticated calls (no refresh token — admin re-enters their password on
@@ -660,7 +687,9 @@ func openFileDialogWindows() (string, error) {
 		`$d.Filter = 'Video Files|*.mp4;*.webm;*.mov;*.mkv;*.avi;*.m4v|All Files|*.*'`,
 		`if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $d.FileName }`,
 	}, "; ")
-	out, err := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", script).Output()
+	cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", script)
+	hideConsole(cmd)
+	out, err := cmd.Output()
 	if err != nil {
 		// Treat exec errors as cancellation (e.g. user closed dialog)
 		return "", nil
