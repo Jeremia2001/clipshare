@@ -49,7 +49,7 @@ openssl rand -base64 48
 Start the stack:
 
 ```bash
-docker compose up -d
+docker compose --profile local up -d
 ```
 
 Compose automatically picks up `docker/.env`. Migrations run on container start.
