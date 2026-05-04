@@ -36,6 +36,9 @@ jobs:
         working-directory: apps/desktop/frontend
         run: npm ci
 
+      - name: Generate Wails bindings
+        run: wails generate module
+
       - name: Build frontend
         working-directory: apps/desktop/frontend
         run: npm run build
