@@ -1,6 +1,6 @@
 import { Link, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
-import { Video, Settings, LogOut, Library, Scissors } from 'lucide-react'
+import { Settings, LogOut, Library, Scissors } from 'lucide-react'
 
 function Layout() {
   const { user, logout, isDevMode } = useAuth()
@@ -31,7 +31,9 @@ function Layout() {
         >
           <div className="h-7 w-7 bg-forest-600 flex items-center justify-center rounded-sm"
             style={{ boxShadow: '0 0 10px rgba(82, 176, 67, 0.3)' }}>
-            <Video className="h-4 w-4 text-white" />
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" className="h-4 w-4 text-white" fill="currentColor">
+              <path d="M160-240v-320 320Zm0 80q-33 0-56.5-23.5T80-240v-480q0-33 23.5-56.5T160-800l80 160h120l-80-160h80l80 160h120l-80-160h80l80 160h120l-80-160h120q33 0 56.5 23.5T880-720v160H160v320h320v80H160Zm400 40v-123l221-220q9-9 20-13t22-4q12 0 23 4.5t20 13.5l37 37q8 9 12.5 20t4.5 22q0 11-4 22.5T903-340L683-120H560Zm300-263-37-37 37 37ZM620-180h38l121-122-18-19-19-18-122 121v38Zm141-141-19-18 37 37-18-19Z" />
+            </svg>
           </div>
           <span
             className="font-black text-white text-sm tracking-[0.18em] uppercase nav-font"
