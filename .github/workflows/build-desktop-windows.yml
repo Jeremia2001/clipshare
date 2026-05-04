@@ -1,12 +1,9 @@
 name: Build Desktop (Windows)
 
 on:
-  workflow_dispatch:
-    inputs:
-      version:
-        description: "Version number (e.g. 1.2.3)"
-        required: true
-        type: string
+  push:
+    tags:
+      - "v*.*.*"
 
 jobs:
   build-windows:
@@ -38,8 +35,8 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: "v${{ github.event.inputs.version }}"
-          name: "ClipShare Desktop v${{ github.event.inputs.version }}"
+          tag_name: "${{ github.ref_name }}"
+          name: "ClipShare Desktop ${{ github.ref_name }}"
           draft: false
           prerelease: false
           files: |
