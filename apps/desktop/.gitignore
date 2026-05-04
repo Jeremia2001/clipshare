@@ -1,10 +1,7 @@
 # Desktop App (Wails) .gitignore
 
 # Build directories
-/build/
 /build/bin/
-!/build/appicon.png
-!/build/windows/icon.ico
 /dist/
 frontend/dist/
 

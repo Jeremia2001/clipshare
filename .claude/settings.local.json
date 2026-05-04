@@ -23,7 +23,13 @@
       "Bash(xargs grep *)",
       "Bash(npm run *)",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5174)",
-      "Bash(netstat -ano)"
+      "Bash(netstat -ano)",
+      "Bash(git check-ignore *)",
+      "PowerShell(cmd /c \"dir /s /b C:\\\\code\\\\clipshare\\\\apps\\\\desktop\\\\frontend\\\\src\")",
+      "PowerShell(npm list *)",
+      "PowerShell(wails version *)",
+      "PowerShell(python --version 2>$null; python3 --version 2>$null)",
+      "PowerShell(python -c \"import cairosvg; print\\('ok'\\)\" 2>&1)"
     ]
   }
 }
