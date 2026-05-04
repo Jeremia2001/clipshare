@@ -1,6 +1,6 @@
 # ClipShare
 
-Self-hosted clipboard sharing. Desktop clients (Windows, macOS, Linux) connect to your own server — no cloud, no accounts, no telemetry.
+Self-hosted clipboard sharing. Windows client (macOS and Linux planned) connect to your own server — no cloud, no accounts, no telemetry.
 
 ---
 
@@ -167,3 +167,9 @@ wails build -tags webkit2_41
 # Dev mode
 wails dev -tags webkit2_41
 ```
+
+---
+
+## License
+
+[GNU Affero General Public License v3.0](LICENSE) — see [LICENSE](LICENSE) for full terms.
