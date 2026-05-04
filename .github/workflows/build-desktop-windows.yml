@@ -29,6 +29,10 @@ jobs:
       - name: Install Wails
         run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
 
+      - name: Install frontend deps
+        working-directory: apps/desktop/frontend
+        run: npm ci
+
       - name: Build
         run: wails build -platform windows/amd64 -nsis
 
