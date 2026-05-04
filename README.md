@@ -2,6 +2,8 @@
 
 Self-hosted clipboard sharing. Windows client (macOS and Linux planned) connect to your own server — no cloud, no accounts, no telemetry.
 
+> **Note:** The desktop app does not include screen recording. It is designed to work with clips already recorded by GPU capture software (NVIDIA ShadowPlay, AMD ReLive), OBS, or any other screen recorder — import the file and share it from there.
+
 ---
 
 ## Stack
