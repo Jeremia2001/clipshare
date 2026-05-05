@@ -32,7 +32,10 @@
       "PowerShell(python -c \"import cairosvg; print\\('ok'\\)\" 2>&1)",
       "Bash(git -C /c/code/clipshare log -p --all -- \"docker/.env\")",
       "PowerShell(New-Item *)",
-      "PowerShell(Remove-Item *)"
+      "PowerShell(Remove-Item *)",
+      "Bash(wails build *)",
+      "Bash(Get-ChildItem -Path \"C:\\\\code\\\\clipshare\\\\apps\\\\desktop\\\\frontend\\\\dist\" -Recurse -ErrorAction SilentlyContinue)",
+      "Bash(Select-Object FullName)"
     ]
   }
 }
