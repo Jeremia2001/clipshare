@@ -922,18 +922,6 @@ func (a *App) uploadThumbnailDirect(thumbPath, clipID, apiBase string) error {
 	return nil
 }
 
-type spaFallback struct{ fs embed.FS }
-
-func (s spaFallback) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	data, err := s.fs.ReadFile("frontend/dist/index.html")
-	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Write(data)
-}
-
 func main() {
 	app := NewApp()
 
@@ -944,8 +932,7 @@ func main() {
 		MinWidth:  800,
 		MinHeight: 600,
 		AssetServer: &assetserver.Options{
-			Assets:  assets,
-			Handler: spaFallback{fs: assets},
+			Assets: assets,
 		},
 		BackgroundColour:  &options.RGBA{R: 27, G: 38, B: 54, A: 1},
 		OnStartup:         app.startup,
